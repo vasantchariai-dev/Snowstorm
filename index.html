@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>Snowstorm at Bjergvej</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #1a1a2e;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+#ui-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 10;
+}
+#score-display {
+  position: absolute; top: 12px; left: 12px;
+  font-family: monospace; font-size: 16px; color: #fff;
+  text-shadow: 2px 2px 0 #000;
+  line-height: 1.6;
+}
+#touch-controls {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 40%;
+  pointer-events: all; display: flex; z-index: 20;
+}
+.touch-zone {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  opacity: 0.15; font-size: 48px; color: #fff;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.touch-zone:active { opacity: 0.3; }
+#btn-left { border-radius: 0; }
+#btn-jump { font-size: 36px; }
+#btn-right { border-radius: 0; }
+#start-screen, #gameover-screen {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10, 10, 30, 0.92); z-index: 30; pointer-events: all;
+  font-family: monospace; color: #fff; text-align: center;
+}
+#start-screen h1 {
+  font-size: 28px; margin-bottom: 8px;
+  text-shadow: 3px 3px 0 #2d5f8a;
+}
+#start-screen .subtitle { font-size: 14px; color: #8ac; margin-bottom: 30px; }
+#start-screen .instructions {
+  font-size: 13px; color: #bbb; line-height: 1.8; margin-bottom: 30px; padding: 0 20px;
+}
+.play-btn {
+  background: #4a9; color: #fff; border: none; padding: 16px 48px;
+  font-family: monospace; font-size: 20px; cursor: pointer;
+  border-radius: 4px; text-shadow: 1px 1px 0 #000;
+  box-shadow: 0 4px 0 #387;
+}
+.play-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #387; }
+#gameover-screen h2 { font-size: 24px; margin-bottom: 16px; color: #f66; }
+#gameover-screen .final-score { font-size: 18px; margin-bottom: 8px; }
+#gameover-screen .reason { font-size: 14px; color: #aaa; margin-bottom: 24px; }
+#throw-btn {
+  position: absolute; bottom: 42%; right: 16px;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(255, 160, 60, 0.7); border: 2px solid rgba(255,200,100,0.8);
+  color: #fff; font-size: 28px; z-index: 25;
+  pointer-events: all; display: none;
+  align-items: center; justify-content: center;
+  font-family: monospace;
+}
+#throw-btn:active { background: rgba(255, 160, 60, 0.95); }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui-overlay">
+  <div id="score-display"></div>
+</div>
+<div id="touch-controls">
+  <div class="touch-zone" id="btn-left">&#9664;</div>
+  <div class="touch-zone" id="btn-jump">&#9650;</div>
+  <div class="touch-zone" id="btn-right">&#9654;</div>
+</div>
+<button id="throw-btn">&#127828;</button>
+
+<div id="start-screen">
+  <h1>SNOWSTORM</h1>
+  <div class="subtitle">at Bjergvej</div>
+  <div class="instructions">
+    Sara must survive the blizzard!<br><br>
+    &#9664; LEFT &nbsp;|&nbsp; JUMP &#9650; &nbsp;|&nbsp; RIGHT &#9654;<br><br>
+    Collect firewood for points<br>
+    Pick up burgers to feed Emily<br>
+    Avoid snowstorms and cats!
+  </div>
+  <button class="play-btn" id="start-btn">PLAY</button>
+</div>
+
+<div id="gameover-screen" style="display:none">
+  <h2>GAME OVER</h2>
+  <div class="final-score" id="final-score"></div>
+  <div class="final-score" id="final-hi"></div>
+  <div class="reason" id="death-reason"></div>
+  <button class="play-btn" id="restart-btn">RETRY</button>
+</div>
+
+<script>
+// ============================================================
+// SNOWSTORM AT BJERGVEJ - Mobile Vertical Platformer
+// ============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// --- Responsive sizing ---
+let W, H, SCALE;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  SCALE = Math.max(1, Math.floor(Math.min(W, H) / 180));
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Pixel art drawing helpers ---
+function drawPixelRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
+}
+
+function drawPixelSprite(x, y, pixels, scale) {
+  const s = scale || SCALE;
+  for (let row = 0; row < pixels.length; row++) {
+    for (let col = 0; col < pixels[row].length; col++) {
+      if (pixels[row][col]) {
+        ctx.fillStyle = pixels[row][col];
+        ctx.fillRect(
+          Math.floor(x + col * s),
+          Math.floor(y + row * s),
+          s, s
+        );
+      }
+    }
+  }
+}
+
+// --- SPRITE DATA ---
+// Sara: short-haired woman in flannel shirt (12x16 pixel sprite)
+const SARA_COLORS = {
+  skin: '#f5c6a0',
+  hair: '#5a3825',
+  flannel1: '#c0392b',
+  flannel2: '#2c3e50',
+  pants: '#34495e',
+  boots: '#2c2c2c',
+  eye: '#222',
+};
+
+function saraSprite(frame) {
+  const S = SARA_COLORS;
+  const _ = null;
+  const h = S.hair, s = S.skin, f1 = S.flannel1, f2 = S.flannel2;
+  const p = S.pants, b = S.boots, e = S.eye;
+  // frame 0 = standing, 1 = walk1, 2 = walk2
+  const base = [
+    [_,_,_,h,h,h,h,h,h,_,_,_],
+    [_,_,h,h,h,h,h,h,h,h,_,_],
+    [_,_,h,s,s,s,s,s,s,h,_,_],
+    [_,_,s,s,e,s,s,e,s,s,_,_],
+    [_,_,s,s,s,s,s,s,s,s,_,_],
+    [_,_,_,s,s,'#d9a88c',s,s,_,_,_,_],
+    [_,_,_,f1,f2,f1,f2,f1,_,_,_,_],
+    [_,_,f1,f1,f2,f1,f2,f1,f1,_,_,_],
+    [_,s,f1,f2,f1,f2,f1,f2,f1,s,_,_],
+    [_,_,f1,f2,f1,f2,f1,f2,f1,_,_,_],
+    [_,_,_,f1,f2,f1,f2,f1,_,_,_,_],
+    [_,_,_,_,p,p,p,p,_,_,_,_],
+    [_,_,_,_,p,p,p,p,_,_,_,_],
+    [_,_,_,p,p,_,_,p,p,_,_,_],
+    [_,_,_,b,b,_,_,b,b,_,_,_],
+    [_,_,b,b,b,_,_,b,b,b,_,_],
+  ];
+
+  if (frame === 1) {
+    base[13] = [_,_,p,p,_,_,_,_,p,p,_,_];
+    base[14] = [_,b,b,b,_,_,_,_,b,b,_,_];
+    base[15] = [_,b,b,_,_,_,_,_,_,b,b,_];
+  } else if (frame === 2) {
+    base[13] = [_,_,_,_,p,p,p,p,_,_,_,_];
+    base[14] = [_,_,_,_,b,b,b,b,_,_,_,_];
+    base[15] = [_,_,_,b,b,_,_,b,b,_,_,_];
+  }
+  return base;
+}
+
+// Snowstorm block (8x8)
+function snowstormSprite() {
+  const w = '#e8eaf0', W2 = '#c8d0e0', b = '#a0b0d0', _ = null;
+  return [
+    [_,w,w,W2,W2,w,w,_],
+    [w,W2,w,b,w,W2,w,w],
+    [w,w,b,W2,b,w,W2,w],
+    [W2,b,W2,w,W2,b,w,W2],
+    [w,W2,w,b,w,W2,b,w],
+    [W2,w,b,W2,b,w,W2,w],
+    [w,W2,w,w,W2,w,w,W2],
+    [_,w,W2,w,w,W2,w,_],
+  ];
+}
+
+// Firewood (8x6)
+function firewoodSprite() {
+  const br = '#8B4513', db = '#654321', o = '#D2691E', _ = null;
+  return [
+    [_,_,br,br,br,br,_,_],
+    [_,br,db,o,db,o,br,_],
+    [br,o,db,br,o,db,o,br],
+    [br,db,o,db,br,o,db,br],
+    [_,br,db,o,db,o,br,_],
+    [_,_,br,br,br,br,_,_],
+  ];
+}
+
+// Burger (8x7)
+function burgerSprite() {
+  const bn = '#D2A050', mt = '#8B2500', lt = '#4CAF50', ch = '#FFD700', tm = '#ff4444', _ = null;
+  return [
+    [_,_,bn,bn,bn,bn,_,_],
+    [_,bn,bn,bn,bn,bn,bn,_],
+    [lt,lt,lt,lt,lt,lt,lt,lt],
+    [mt,mt,ch,mt,mt,ch,mt,mt],
+    [mt,ch,mt,mt,ch,mt,mt,mt],
+    [tm,tm,tm,tm,tm,tm,tm,tm],
+    [_,bn,bn,bn,bn,bn,bn,_],
+  ];
+}
+
+// Cat (10x8)
+function catSprite(color) {
+  const c = color || '#555';
+  const e = '#ff0', _ = null, n = '#faa';
+  return [
+    [c,_,_,_,_,_,_,_,_,c],
+    [c,c,_,_,_,_,_,_,c,c],
+    [c,c,c,c,c,c,c,c,c,c],
+    [c,e,c,c,c,c,c,e,c,c],
+    [c,c,c,c,n,c,c,c,c,c],
+    [c,c,c,c,c,c,c,c,c,c],
+    [_,c,c,c,c,c,c,c,c,_],
+    [_,c,_,c,_,_,c,_,c,_],
+  ];
+}
+
+// Emily (12x16) - hungry woman character
+function emilySprite(frame) {
+  const _ = null;
+  const h = '#e6b422', s = '#f5c6a0', e = '#222';
+  const d = '#6a5acd', d2 = '#483d8b', p = '#34495e', b = '#2c2c2c';
+  const base = [
+    [_,_,_,h,h,h,h,h,h,_,_,_],
+    [_,_,h,h,h,h,h,h,h,h,_,_],
+    [_,h,h,h,h,h,h,h,h,h,h,_],
+    [_,_,s,s,e,s,s,e,s,s,_,_],
+    [_,_,s,s,s,s,s,s,s,s,_,_],
+    [_,_,_,s,s,'#d9a88c',s,s,_,_,_,_],
+    [_,_,_,d,d2,d,d2,d,_,_,_,_],
+    [_,_,d,d,d2,d,d2,d,d,_,_,_],
+    [_,s,d,d2,d,d2,d,d2,d,s,_,_],
+    [_,_,d,d2,d,d2,d,d2,d,_,_,_],
+    [_,_,_,d,d2,d,d2,d,_,_,_,_],
+    [_,_,_,_,p,p,p,p,_,_,_,_],
+    [_,_,_,_,p,p,p,p,_,_,_,_],
+    [_,_,_,p,p,_,_,p,p,_,_,_],
+    [_,_,_,b,b,_,_,b,b,_,_,_],
+    [_,_,b,b,b,_,_,b,b,b,_,_],
+  ];
+  // Wave hands if hungry
+  if (frame % 2 === 0) {
+    base[7] = [_,_,d,d,d2,d,d2,d,d,_,_,_];
+    base[8] = [s,s,d,d2,d,d2,d,d2,d,s,s,_];
+  }
+  return base;
+}
+
+// --- GAME STATE ---
+const GROUND_H = 80;
+const GRAVITY = 0.55;
+const JUMP_FORCE = -11;
+const MOVE_SPEED = 3.5;
+const SCROLL_SPEED_BASE = 1.5;
+
+let game = {};
+let highScore = parseInt(localStorage.getItem('snowstorm_hi') || '0');
+
+function initGame() {
+  game = {
+    running: true,
+    score: 0,
+    firewood: 0,
+    burgers: 0,
+    scrollSpeed: SCROLL_SPEED_BASE,
+    scrollX: 0,
+    frameCount: 0,
+    deathReason: '',
+
+    sara: {
+      x: W * 0.3,
+      y: H - GROUND_H - 16 * SCALE,
+      vy: 0,
+      vx: 0,
+      onGround: true,
+      width: 12 * SCALE,
+      height: 16 * SCALE,
+      frame: 0,
+      frameTimer: 0,
+      facing: 1,
+    },
+
+    platforms: [],
+    snowstorms: [],
+    firewoods: [],
+    burgerItems: [],
+    cats: [],
+    emilys: [],
+    thrownBurgers: [],
+    particles: [],
+    snowflakes: [],
+
+    spawnTimer: 0,
+    emilyTimer: 300,
+    difficultyTimer: 0,
+
+    input: { left: false, right: false, jump: false, throw: false },
+  };
+
+  // Init snowflakes
+  for (let i = 0; i < 80; i++) {
+    game.snowflakes.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 3 + 1,
+      speed: Math.random() * 1.5 + 0.5,
+      drift: Math.random() * 0.8 - 0.4,
+    });
+  }
+
+  // Generate initial platforms
+  generateInitialPlatforms();
+}
+
+function generateInitialPlatforms() {
+  let x = W * 0.5;
+  for (let i = 0; i < 8; i++) {
+    x += Math.random() * 120 + 80;
+    const pw = Math.random() * 60 + 50;
+    const py = H - GROUND_H - Math.random() * 120 - 40;
+    game.platforms.push({ x, y: py, w: pw, h: 8 * SCALE });
+  }
+}
+
+// --- SPAWNING ---
+function spawnEntities() {
+  game.spawnTimer++;
+  const diff = Math.min(game.score / 500, 3);
+
+  // Platforms
+  if (game.spawnTimer % Math.max(30, 60 - diff * 8) === 0) {
+    const py = H - GROUND_H - Math.random() * 150 - 40;
+    const pw = Math.random() * 60 + 40;
+    game.platforms.push({ x: W + 20, y: py, w: pw, h: 8 * SCALE });
+  }
+
+  // Snowstorms
+  if (game.spawnTimer % Math.max(40, 80 - diff * 10) === 0) {
+    const sy = H - GROUND_H - Math.random() * 100 - 16 * SCALE;
+    game.snowstorms.push({
+      x: W + 20, y: sy,
+      width: 8 * SCALE * (Math.random() > 0.5 ? 2 : 1),
+      height: 8 * SCALE,
+      speed: game.scrollSpeed + Math.random() * 1.5,
+    });
+  }
+
+  // Firewood
+  if (game.spawnTimer % 90 === 0 && Math.random() > 0.3) {
+    const fy = H - GROUND_H - Math.random() * 130 - 20;
+    game.firewoods.push({ x: W + 20, y: fy, width: 8 * SCALE, height: 6 * SCALE });
+  }
+
+  // Burgers
+  if (game.spawnTimer % 150 === 0 && Math.random() > 0.4) {
+    const by = H - GROUND_H - Math.random() * 100 - 20;
+    game.burgerItems.push({ x: W + 20, y: by, width: 8 * SCALE, height: 7 * SCALE });
+  }
+
+  // Cats
+  if (game.spawnTimer % Math.max(100, 200 - diff * 20) === 0 && Math.random() > 0.4) {
+    const cy = H - GROUND_H - 8 * SCALE;
+    const color = ['#555', '#FF8C00', '#fff', '#222'][Math.floor(Math.random() * 4)];
+    game.cats.push({
+      x: W + 20, y: cy,
+      width: 10 * SCALE, height: 8 * SCALE,
+      speed: game.scrollSpeed + 0.5 + Math.random(),
+      color,
+      jumpTimer: Math.random() * 60,
+      vy: 0,
+      baseY: cy,
+    });
+  }
+
+  // Emily
+  game.emilyTimer--;
+  if (game.emilyTimer <= 0) {
+    game.emilys.push({
+      x: W + 20,
+      y: H - GROUND_H - 16 * SCALE,
+      width: 12 * SCALE,
+      height: 16 * SCALE,
+      timer: 300,
+      fed: false,
+      frame: 0,
+    });
+    game.emilyTimer = 400 + Math.random() * 200;
+  }
+}
+
+// --- PHYSICS & UPDATE ---
+function update() {
+  if (!game.running) return;
+
+  game.frameCount++;
+  game.difficultyTimer++;
+  if (game.difficultyTimer % 600 === 0) {
+    game.scrollSpeed = Math.min(SCROLL_SPEED_BASE + game.difficultyTimer / 1200, 4.5);
+  }
+
+  const sara = game.sara;
+  const inp = game.input;
+
+  // Horizontal movement
+  if (inp.left) {
+    sara.vx = -MOVE_SPEED;
+    sara.facing = -1;
+  } else if (inp.right) {
+    sara.vx = MOVE_SPEED;
+    sara.facing = 1;
+  } else {
+    sara.vx *= 0.7;
+    if (Math.abs(sara.vx) < 0.2) sara.vx = 0;
+  }
+
+  // Auto-scroll push
+  sara.x -= game.scrollSpeed * 0.5;
+  sara.x += sara.vx;
+
+  // Clamp horizontal
+  if (sara.x < 0) sara.x = 0;
+  if (sara.x + sara.width > W) sara.x = W - sara.width;
+
+  // Jump
+  if (inp.jump && sara.onGround) {
+    sara.vy = JUMP_FORCE;
+    sara.onGround = false;
+    spawnParticles(sara.x + sara.width / 2, sara.y + sara.height, 5, '#fff');
+  }
+  inp.jump = false; // consume jump
+
+  // Gravity
+  sara.vy += GRAVITY;
+  sara.y += sara.vy;
+
+  // Ground collision
+  sara.onGround = false;
+  if (sara.y + sara.height >= H - GROUND_H) {
+    sara.y = H - GROUND_H - sara.height;
+    sara.vy = 0;
+    sara.onGround = true;
+  }
+
+  // Platform collision
+  for (const plat of game.platforms) {
+    if (sara.vy >= 0 &&
+        sara.x + sara.width > plat.x && sara.x < plat.x + plat.w &&
+        sara.y + sara.height >= plat.y && sara.y + sara.height <= plat.y + plat.h + 8) {
+      sara.y = plat.y - sara.height;
+      sara.vy = 0;
+      sara.onGround = true;
+    }
+  }
+
+  // Animation
+  if (Math.abs(sara.vx) > 0.5 && sara.onGround) {
+    sara.frameTimer++;
+    if (sara.frameTimer > 8) {
+      sara.frame = (sara.frame + 1) % 3;
+      sara.frameTimer = 0;
+    }
+  } else if (!sara.onGround) {
+    sara.frame = 1;
+  } else {
+    sara.frame = 0;
+  }
+
+  // Fell off left side
+  if (sara.x + sara.width < -20) {
+    gameOver('Swept away by the blizzard!');
+    return;
+  }
+
+  // --- Scroll entities ---
+  const sx = game.scrollSpeed;
+
+  // Platforms
+  for (let i = game.platforms.length - 1; i >= 0; i--) {
+    game.platforms[i].x -= sx;
+    if (game.platforms[i].x + game.platforms[i].w < -50) game.platforms.splice(i, 1);
+  }
+
+  // Snowstorms
+  for (let i = game.snowstorms.length - 1; i >= 0; i--) {
+    const ss = game.snowstorms[i];
+    ss.x -= ss.speed;
+    if (ss.x + ss.width < -50) { game.snowstorms.splice(i, 1); continue; }
+    // Collision with Sara
+    if (rectsOverlap(sara, ss)) {
+      spawnParticles(sara.x + sara.width / 2, sara.y + sara.height / 2, 15, '#c8d0e0');
+      gameOver('Hit by a snowstorm!');
+      return;
+    }
+  }
+
+  // Firewood
+  for (let i = game.firewoods.length - 1; i >= 0; i--) {
+    game.firewoods[i].x -= sx;
+    if (game.firewoods[i].x < -50) { game.firewoods.splice(i, 1); continue; }
+    if (rectsOverlap(sara, game.firewoods[i])) {
+      game.firewood++;
+      game.score += 25;
+      spawnParticles(game.firewoods[i].x, game.firewoods[i].y, 5, '#D2691E');
+      game.firewoods.splice(i, 1);
+    }
+  }
+
+  // Burger items
+  for (let i = game.burgerItems.length - 1; i >= 0; i--) {
+    game.burgerItems[i].x -= sx;
+    if (game.burgerItems[i].x < -50) { game.burgerItems.splice(i, 1); continue; }
+    if (rectsOverlap(sara, game.burgerItems[i])) {
+      game.burgers++;
+      spawnParticles(game.burgerItems[i].x, game.burgerItems[i].y, 5, '#FFD700');
+      game.burgerItems.splice(i, 1);
+      updateThrowBtn();
+    }
+  }
+
+  // Cats
+  for (let i = game.cats.length - 1; i >= 0; i--) {
+    const cat = game.cats[i];
+    cat.x -= cat.speed;
+    cat.jumpTimer--;
+    if (cat.jumpTimer <= 0) {
+      cat.vy = -6;
+      cat.jumpTimer = 80 + Math.random() * 60;
+    }
+    cat.vy += 0.35;
+    cat.y += cat.vy;
+    if (cat.y > cat.baseY) { cat.y = cat.baseY; cat.vy = 0; }
+
+    if (cat.x < -50) { game.cats.splice(i, 1); continue; }
+    if (rectsOverlap(sara, cat)) {
+      spawnParticles(sara.x + sara.width / 2, sara.y + sara.height / 2, 10, cat.color);
+      gameOver('Tripped over a cat!');
+      return;
+    }
+  }
+
+  // Emily
+  for (let i = game.emilys.length - 1; i >= 0; i--) {
+    const em = game.emilys[i];
+    em.x -= sx * 0.3; // She moves slowly
+    em.timer--;
+    em.frame++;
+    if (em.timer <= 0 || em.x < -50) { game.emilys.splice(i, 1); continue; }
+  }
+
+  // Thrown burgers
+  for (let i = game.thrownBurgers.length - 1; i >= 0; i--) {
+    const tb = game.thrownBurgers[i];
+    tb.x += tb.vx;
+    tb.y += tb.vy;
+    tb.vy += 0.15;
+    if (tb.x > W + 50 || tb.y > H + 50) { game.thrownBurgers.splice(i, 1); continue; }
+
+    // Check Emily collision
+    for (let j = game.emilys.length - 1; j >= 0; j--) {
+      if (rectsOverlap(tb, game.emilys[j])) {
+        game.score += 100;
+        game.emilys[j].fed = true;
+        spawnParticles(game.emilys[j].x + game.emilys[j].width / 2, game.emilys[j].y, 10, '#FFD700');
+        // Show "+100" particle
+        game.particles.push({
+          x: game.emilys[j].x, y: game.emilys[j].y - 20,
+          vx: 0, vy: -1.5, life: 40, color: '#FFD700', text: '+100', size: 3,
+        });
+        game.emilys.splice(j, 1);
+        game.thrownBurgers.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // Particles
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const pt = game.particles[i];
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+    pt.life--;
+    if (pt.life <= 0) game.particles.splice(i, 1);
+  }
+
+  // Snowflakes
+  for (const sf of game.snowflakes) {
+    sf.x += sf.drift - sx * 0.3;
+    sf.y += sf.speed;
+    if (sf.y > H) { sf.y = -5; sf.x = Math.random() * W; }
+    if (sf.x < -10) sf.x = W + 5;
+  }
+
+  // Score from survival
+  if (game.frameCount % 10 === 0) game.score++;
+
+  // Spawn new entities
+  spawnEntities();
+}
+
+function rectsOverlap(a, b) {
+  const shrink = 2;
+  return (
+    a.x + shrink < b.x + b.width - shrink &&
+    a.x + a.width - shrink > b.x + shrink &&
+    a.y + shrink < b.y + b.height - shrink &&
+    a.y + a.height - shrink > b.y + shrink
+  );
+}
+
+function spawnParticles(x, y, count, color) {
+  for (let i = 0; i < count; i++) {
+    game.particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4 - 1,
+      life: 20 + Math.random() * 15,
+      color,
+      size: Math.random() * 3 + 1,
+    });
+  }
+}
+
+function gameOver(reason) {
+  game.running = false;
+  game.deathReason = reason;
+  if (game.score > highScore) {
+    highScore = game.score;
+    localStorage.setItem('snowstorm_hi', highScore.toString());
+  }
+  document.getElementById('final-score').textContent = `Score: ${game.score}`;
+  document.getElementById('final-hi').textContent = `Best: ${highScore}`;
+  document.getElementById('death-reason').textContent = reason;
+  document.getElementById('gameover-screen').style.display = 'flex';
+  document.getElementById('throw-btn').style.display = 'none';
+}
+
+function throwBurger() {
+  if (game.burgers <= 0 || !game.running) return;
+  game.burgers--;
+  updateThrowBtn();
+  const sara = game.sara;
+  game.thrownBurgers.push({
+    x: sara.x + sara.width,
+    y: sara.y + sara.height * 0.3,
+    vx: 7,
+    vy: -2,
+    width: 8 * SCALE,
+    height: 7 * SCALE,
+  });
+}
+
+function updateThrowBtn() {
+  const btn = document.getElementById('throw-btn');
+  if (game.burgers > 0) {
+    btn.style.display = 'flex';
+    btn.textContent = '🍔' + game.burgers;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// --- RENDERING ---
+function draw() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1a1a3e');
+  grad.addColorStop(0.4, '#2d3a5e');
+  grad.addColorStop(0.7, '#4a5a7a');
+  grad.addColorStop(1, '#6a7a9a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Mountains (background parallax)
+  drawMountains();
+
+  // Snowflakes behind
+  ctx.globalAlpha = 0.5;
+  for (const sf of game.snowflakes) {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(Math.floor(sf.x), Math.floor(sf.y), sf.size, sf.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // Ground
+  drawPixelRect(0, H - GROUND_H, W, GROUND_H, '#e8eaf6');
+  // Ground snow texture
+  for (let x = 0; x < W; x += 6) {
+    const h = Math.sin(x * 0.05 + game.scrollX * 0.01) * 4 + 3;
+    drawPixelRect(x, H - GROUND_H - h, 6, h, '#f0f2ff');
+  }
+  // Ground line
+  drawPixelRect(0, H - GROUND_H, W, 2, '#c0c8e0');
+
+  // Platforms
+  for (const plat of game.platforms) {
+    // Platform body
+    ctx.fillStyle = '#8B7355';
+    ctx.fillRect(Math.floor(plat.x), Math.floor(plat.y), plat.w, plat.h);
+    // Snow on top
+    ctx.fillStyle = '#e8eaf6';
+    ctx.fillRect(Math.floor(plat.x), Math.floor(plat.y) - 3, plat.w, 4);
+    // Wood grain
+    ctx.fillStyle = '#7a6345';
+    ctx.fillRect(Math.floor(plat.x) + 4, Math.floor(plat.y) + 2, plat.w - 8, 2);
+  }
+
+  // Firewood
+  for (const fw of game.firewoods) {
+    drawPixelSprite(fw.x, fw.y, firewoodSprite());
+    // Glow
+    ctx.globalAlpha = 0.2 + Math.sin(game.frameCount * 0.1) * 0.1;
+    ctx.fillStyle = '#D2691E';
+    ctx.fillRect(Math.floor(fw.x) - 2, Math.floor(fw.y) - 2, fw.width + 4, fw.height + 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // Burger items
+  for (const bi of game.burgerItems) {
+    drawPixelSprite(bi.x, bi.y, burgerSprite());
+    // Glow
+    ctx.globalAlpha = 0.15 + Math.sin(game.frameCount * 0.12) * 0.1;
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(Math.floor(bi.x) - 2, Math.floor(bi.y) - 2, bi.width + 4, bi.height + 4);
+    ctx.globalAlpha = 1;
+  }
+
+  // Snowstorms
+  for (const ss of game.snowstorms) {
+    const cols = Math.ceil(ss.width / (8 * SCALE));
+    for (let c = 0; c < cols; c++) {
+      drawPixelSprite(ss.x + c * 8 * SCALE, ss.y, snowstormSprite());
+    }
+    // Swirl effect
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#c8d0e0';
+    const ox = Math.sin(game.frameCount * 0.15) * 4;
+    ctx.fillRect(Math.floor(ss.x) + ox - 4, Math.floor(ss.y) - 4, ss.width + 8, ss.height + 8);
+    ctx.globalAlpha = 1;
+  }
+
+  // Cats
+  for (const cat of game.cats) {
+    drawPixelSprite(cat.x, cat.y, catSprite(cat.color));
+  }
+
+  // Emily
+  for (const em of game.emilys) {
+    drawPixelSprite(em.x, em.y, emilySprite(em.frame));
+    // Speech bubble "HUNGRY!"
+    if (!em.fed) {
+      const bx = em.x - 10;
+      const by = em.y - 22;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.floor(bx), Math.floor(by), 70, 18);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.floor(em.x + 10), Math.floor(by + 18), 6, 6);
+      ctx.fillStyle = '#333';
+      ctx.font = `${Math.max(11, SCALE * 4)}px monospace`;
+      ctx.fillText('HUNGRY!', Math.floor(bx + 4), Math.floor(by + 13));
+    }
+  }
+
+  // Thrown burgers
+  for (const tb of game.thrownBurgers) {
+    drawPixelSprite(tb.x, tb.y, burgerSprite());
+  }
+
+  // Sara
+  const sara = game.sara;
+  ctx.save();
+  if (sara.facing === -1) {
+    ctx.translate(sara.x + sara.width, sara.y);
+    ctx.scale(-1, 1);
+    drawPixelSprite(0, 0, saraSprite(sara.frame));
+  } else {
+    drawPixelSprite(sara.x, sara.y, saraSprite(sara.frame));
+  }
+  ctx.restore();
+
+  // Carrying indicator
+  if (game.firewood > 0) {
+    ctx.fillStyle = '#D2691E';
+    ctx.font = `${Math.max(10, SCALE * 3)}px monospace`;
+    ctx.fillText(`🪵${game.firewood}`, Math.floor(sara.x - 5), Math.floor(sara.y - 5));
+  }
+
+  // Particles
+  for (const pt of game.particles) {
+    const alpha = pt.life / 35;
+    ctx.globalAlpha = Math.min(1, alpha);
+    if (pt.text) {
+      ctx.fillStyle = pt.color;
+      ctx.font = `bold ${14}px monospace`;
+      ctx.fillText(pt.text, Math.floor(pt.x), Math.floor(pt.y));
+    } else {
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(Math.floor(pt.x), Math.floor(pt.y), pt.size, pt.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // HUD
+  const hud = document.getElementById('score-display');
+  hud.innerHTML = `SCORE: ${game.score}<br>WOOD: ${game.firewood}<br>BURGERS: ${game.burgers}`;
+
+  // Snowflakes in front
+  ctx.globalAlpha = 0.7;
+  for (let i = 0; i < 20; i++) {
+    const sf = game.snowflakes[i];
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(Math.floor(sf.x), Math.floor(sf.y), sf.size + 1, sf.size + 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawMountains() {
+  const offset = (game.scrollX || 0) * 0.1;
+  // Far mountains
+  ctx.fillStyle = '#2a3050';
+  ctx.beginPath();
+  ctx.moveTo(0, H - GROUND_H);
+  for (let x = 0; x <= W; x += 40) {
+    const h = Math.sin((x + offset) * 0.008) * 80 + Math.sin((x + offset) * 0.003) * 50 + 120;
+    ctx.lineTo(x, H - GROUND_H - h);
+  }
+  ctx.lineTo(W, H - GROUND_H);
+  ctx.fill();
+
+  // Near mountains
+  ctx.fillStyle = '#3a4060';
+  ctx.beginPath();
+  ctx.moveTo(0, H - GROUND_H);
+  for (let x = 0; x <= W; x += 30) {
+    const h = Math.sin((x + offset * 1.5) * 0.012) * 60 + Math.sin((x + offset * 1.5) * 0.005) * 30 + 80;
+    ctx.lineTo(x, H - GROUND_H - h);
+  }
+  ctx.lineTo(W, H - GROUND_H);
+  ctx.fill();
+
+  // Snow caps
+  ctx.fillStyle = '#e8eaf6';
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.moveTo(0, H - GROUND_H - 150);
+  for (let x = 0; x <= W; x += 40) {
+    const h = Math.sin((x + offset) * 0.008) * 80 + Math.sin((x + offset) * 0.003) * 50 + 120;
+    if (h > 140) {
+      ctx.lineTo(x, H - GROUND_H - h);
+      ctx.lineTo(x + 20, H - GROUND_H - h + 15);
+    }
+  }
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// --- GAME LOOP ---
+function gameLoop() {
+  if (game.running) {
+    game.scrollX += game.scrollSpeed;
+    update();
+  }
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// --- INPUT HANDLING ---
+// Touch controls
+const btnLeft = document.getElementById('btn-left');
+const btnJump = document.getElementById('btn-jump');
+const btnRight = document.getElementById('btn-right');
+const throwBtn = document.getElementById('throw-btn');
+
+function handleTouchStart(zone) {
+  return function(e) {
+    e.preventDefault();
+    if (zone === 'left') game.input.left = true;
+    if (zone === 'right') game.input.right = true;
+    if (zone === 'jump') game.input.jump = true;
+  };
+}
+
+function handleTouchEnd(zone) {
+  return function(e) {
+    e.preventDefault();
+    if (zone === 'left') game.input.left = false;
+    if (zone === 'right') game.input.right = false;
+  };
+}
+
+btnLeft.addEventListener('touchstart', handleTouchStart('left'), { passive: false });
+btnLeft.addEventListener('touchend', handleTouchEnd('left'), { passive: false });
+btnRight.addEventListener('touchstart', handleTouchStart('right'), { passive: false });
+btnRight.addEventListener('touchend', handleTouchEnd('right'), { passive: false });
+btnJump.addEventListener('touchstart', handleTouchStart('jump'), { passive: false });
+btnJump.addEventListener('touchend', handleTouchEnd('jump'), { passive: false });
+
+// Mouse fallback for touch zones
+btnLeft.addEventListener('mousedown', () => game.input.left = true);
+btnLeft.addEventListener('mouseup', () => game.input.left = false);
+btnLeft.addEventListener('mouseleave', () => game.input.left = false);
+btnRight.addEventListener('mousedown', () => game.input.right = true);
+btnRight.addEventListener('mouseup', () => game.input.right = false);
+btnRight.addEventListener('mouseleave', () => game.input.right = false);
+btnJump.addEventListener('mousedown', () => game.input.jump = true);
+
+throwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwBurger(); }, { passive: false });
+throwBtn.addEventListener('click', () => throwBurger());
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'ArrowLeft') game.input.left = true;
+  if (e.code === 'ArrowRight') game.input.right = true;
+  if (e.code === 'Space') { e.preventDefault(); game.input.jump = true; }
+  if (e.code === 'KeyF' || e.code === 'KeyX') throwBurger();
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowLeft') game.input.left = false;
+  if (e.code === 'ArrowRight') game.input.right = false;
+});
+
+// --- START / RESTART ---
+document.getElementById('start-btn').addEventListener('click', () => {
+  document.getElementById('start-screen').style.display = 'none';
+  initGame();
+  updateThrowBtn();
+  gameLoop();
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  document.getElementById('gameover-screen').style.display = 'none';
+  initGame();
+  updateThrowBtn();
+  gameLoop();
+});
+
+// Prevent scrolling on mobile
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+</script>
+</body>
+</html>
