@@ -30,16 +30,10 @@ canvas {
   text-shadow: 2px 2px 0 #000;
   line-height: 1.5;
 }
-#touch-controls {
-  position: absolute; bottom: 0; left: 0; width: 100%; height: 30%;
-  pointer-events: all; display: flex; z-index: 20;
+#touch-layer {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: all; z-index: 20;
 }
-.touch-zone {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  opacity: 0.12; font-size: 36px; color: #fff;
-  border: 1px solid rgba(255,255,255,0.08);
-}
-.touch-zone:active { opacity: 0.25; }
 #start-screen, #gameover-screen {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -87,12 +81,7 @@ canvas {
 <div id="ui-overlay">
   <div id="score-display"></div>
 </div>
-<div id="touch-controls">
-  <div class="touch-zone" id="btn-left">&#9664;</div>
-  <div class="touch-zone" id="btn-duck">&#9660;</div>
-  <div class="touch-zone" id="btn-jump">&#9650;</div>
-  <div class="touch-zone" id="btn-right">&#9654;</div>
-</div>
+<div id="touch-layer"></div>
 <button class="action-btn" id="throw-btn">&#127828;</button>
 <button class="action-btn" id="fire-btn">&#128293;</button>
 
@@ -101,12 +90,13 @@ canvas {
   <div class="subtitle">at Bjergvej</div>
   <div class="instructions">
     Sara must survive the blizzard!<br><br>
-    &#9664; LEFT | &#9660; DUCK | &#9650; JUMP | RIGHT &#9654;<br><br>
+    Tap LEFT/RIGHT to move | TOP to JUMP | BOTTOM to DUCK<br>
+    Tap on cats to stroke them away!<br><br>
     <b>JUMP</b> over snowdrifts &amp; cats<br>
     <b>DUCK</b> under high snowstorms<br>
     <b>FIREWOOD</b> - light fires to melt snow!<br>
     <b>BURGERS</b> - throw to feed Emily<br><br>
-    Watch out for Effie &amp; Nora!
+    You have 3 lives! Watch out for Effie &amp; Nora!
   </div>
   <button class="play-btn" id="start-btn">PLAY</button>
 </div>
@@ -386,6 +376,8 @@ function initGame() {
   game = {
     running: true,
     score: 0,
+    lives: 3,
+    invincible: 0,
     firewood: 0,
     burgers: 0,
     scrollSpeed: SCROLL_SPEED_BASE,
@@ -591,6 +583,9 @@ function update() {
     game.scrollSpeed = Math.min(SCROLL_SPEED_BASE + game.difficultyTimer / 2500, 2.5);
   }
 
+  // Invincibility timer
+  if (game.invincible > 0) game.invincible--;
+
   const sara = game.sara;
   const inp = game.input;
 
@@ -716,10 +711,12 @@ function update() {
     const sd = game.snowdrifts[i];
     sd.x -= sd.speed;
     if (sd.x + sd.width < -60) { game.snowdrifts.splice(i, 1); continue; }
-    if (rectsOverlap(sara, sd)) {
+    if (rectsOverlap(sara, sd) && game.invincible <= 0) {
       spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 12, '#c8d0e0');
-      gameOver('Crashed into a snowdrift!');
-      return;
+      loseLife('Crashed into a snowdrift!');
+      if (!game.running) return;
+      game.snowdrifts.splice(i, 1);
+      continue;
     }
   }
 
@@ -728,10 +725,12 @@ function update() {
     const ss = game.snowstorms[i];
     ss.x -= ss.speed;
     if (ss.x + ss.width < -60) { game.snowstorms.splice(i, 1); continue; }
-    if (rectsOverlap(sara, ss)) {
+    if (rectsOverlap(sara, ss) && game.invincible <= 0) {
       spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 15, '#c8d0e0');
-      gameOver('Hit by a snowstorm!');
-      return;
+      loseLife('Hit by a snowstorm!');
+      if (!game.running) return;
+      game.snowstorms.splice(i, 1);
+      continue;
     }
   }
 
@@ -794,11 +793,11 @@ function update() {
     if (cat.y > cat.baseY) { cat.y = cat.baseY; cat.vy = 0; }
 
     if (cat.x < -100) { game.cats.splice(i, 1); continue; }
-    if (rectsOverlap(sara, cat)) {
+    if (rectsOverlap(sara, cat) && game.invincible <= 0) {
       const color = cat.name === 'Nora' ? '#8B5E3C' : '#E87A2E';
       spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 10, color);
-      gameOver('Tripped over ' + cat.name + '!');
-      return;
+      loseLife('Tripped over ' + cat.name + '!');
+      if (!game.running) return;
     }
   }
 
@@ -887,6 +886,43 @@ function gameOver(reason) {
   document.getElementById('gameover-screen').style.display = 'flex';
   document.getElementById('throw-btn').style.display = 'none';
   document.getElementById('fire-btn').style.display = 'none';
+}
+
+function loseLife(reason) {
+  game.lives--;
+  if (game.lives <= 0) {
+    gameOver(reason);
+    return;
+  }
+  // Brief invincibility (120 frames = ~2 seconds)
+  game.invincible = 120;
+  spawnParticles(game.sara.x + game.sara.width/2, game.sara.y + game.sara.height/2, 8, '#ff4444');
+  game.particles.push({
+    x: game.sara.x, y: game.sara.y - 20, vx: 0, vy: -1.5,
+    life: 50, color: '#ff4444', text: '-1 LIFE!', size: 3,
+  });
+}
+
+function tryCatStroke(screenX, screenY) {
+  for (let i = game.cats.length - 1; i >= 0; i--) {
+    const cat = game.cats[i];
+    // Generous hit area for tapping on cats
+    const margin = 15;
+    if (screenX >= cat.x - margin && screenX <= cat.x + cat.width + margin &&
+        screenY >= cat.y - margin && screenY <= cat.y + cat.height + margin) {
+      // Push cat far back to the right
+      cat.x += 200;
+      cat.speed = -2; // temporarily moves backward
+      spawnParticles(cat.x + cat.width/2, cat.y + cat.height/2, 10, '#ff69b4');
+      game.particles.push({
+        x: cat.x + cat.width/2, y: cat.y - 15, vx: 0, vy: -1.2,
+        life: 45, color: '#ff69b4', text: 'PURR~', size: 3,
+      });
+      game.score += 20;
+      return true;
+    }
+  }
+  return false;
 }
 
 function throwBurger() {
@@ -1096,17 +1132,22 @@ function draw() {
     drawPixelSprite(tb.x, tb.y, burgerSprite());
   }
 
-  // Sara
+  // Sara (flash when invincible)
   const sara = game.sara;
-  ctx.save();
-  if (sara.facing === -1) {
-    ctx.translate(sara.x + sara.width, sara.y);
-    ctx.scale(-1, 1);
-    drawPixelSprite(0, 0, saraSprite(sara.frame, sara.ducking));
-  } else {
-    drawPixelSprite(sara.x, sara.y, saraSprite(sara.frame, sara.ducking));
+  const saraVisible = game.invincible <= 0 || Math.floor(game.invincible / 4) % 2 === 0;
+  if (saraVisible) {
+    ctx.save();
+    if (game.invincible > 0) ctx.globalAlpha = 0.6;
+    if (sara.facing === -1) {
+      ctx.translate(sara.x + sara.width, sara.y);
+      ctx.scale(-1, 1);
+      drawPixelSprite(0, 0, saraSprite(sara.frame, sara.ducking));
+    } else {
+      drawPixelSprite(sara.x, sara.y, saraSprite(sara.frame, sara.ducking));
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
-  ctx.restore();
 
   // Sara name
   ctx.fillStyle = '#fff';
@@ -1130,8 +1171,43 @@ function draw() {
   }
 
   // HUD
+  const hearts = '\u2764\uFE0F'.repeat(game.lives);
   document.getElementById('score-display').innerHTML =
-    'SCORE: ' + game.score + '<br>WOOD: ' + game.firewood + '<br>BURGERS: ' + game.burgers;
+    hearts + '<br>SCORE: ' + game.score + '<br>WOOD: ' + game.firewood + '<br>BURGERS: ' + game.burgers;
+
+  // Subtle quadrant control hints
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  // Horizontal divider hints
+  ctx.beginPath();
+  ctx.moveTo(W * 0.15, H * 0.42);
+  ctx.lineTo(W * 0.85, H * 0.42);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(W * 0.15, H * 0.58);
+  ctx.lineTo(W * 0.85, H * 0.58);
+  ctx.stroke();
+  // Vertical divider hints
+  ctx.beginPath();
+  ctx.moveTo(W * 0.38, H * 0.05);
+  ctx.lineTo(W * 0.38, H * 0.85);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(W * 0.62, H * 0.05);
+  ctx.lineTo(W * 0.62, H * 0.85);
+  ctx.stroke();
+  // Tiny direction labels
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#fff';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('\u25B2', W * 0.5, H * 0.25);
+  ctx.fillText('\u25BC', W * 0.5, H * 0.75);
+  ctx.fillText('\u25C0', W * 0.15, H * 0.5);
+  ctx.fillText('\u25B6', W * 0.85, H * 0.5);
+  ctx.textAlign = 'left';
+  ctx.globalAlpha = 1;
 
   // Snowflakes in front
   ctx.globalAlpha = 0.7;
@@ -1169,51 +1245,85 @@ function gameLoop() {
 }
 
 // ---- INPUT ----
-const btnLeft = document.getElementById('btn-left');
-const btnDuck = document.getElementById('btn-duck');
-const btnJump = document.getElementById('btn-jump');
-const btnRight = document.getElementById('btn-right');
+const touchLayer = document.getElementById('touch-layer');
 const throwBtn = document.getElementById('throw-btn');
 const fireBtn = document.getElementById('fire-btn');
 
-function ts(zone) {
-  return function(e) {
-    e.preventDefault();
-    if (zone === 'left') game.input.left = true;
-    if (zone === 'right') game.input.right = true;
-    if (zone === 'jump') game.input.jump = true;
-    if (zone === 'duck') game.input.duck = true;
-  };
-}
-function te(zone) {
-  return function(e) {
-    e.preventDefault();
-    if (zone === 'left') game.input.left = false;
-    if (zone === 'right') game.input.right = false;
-    if (zone === 'duck') game.input.duck = false;
+// Full-screen quadrant touch controls + cat stroking
+const activeTouches = {};
+
+function getTouchActions(x, y) {
+  return {
+    jump: y < H * 0.42,
+    duck: y > H * 0.58,
+    left: x < W * 0.38,
+    right: x > W * 0.62,
   };
 }
 
-btnLeft.addEventListener('touchstart', ts('left'), {passive:false});
-btnLeft.addEventListener('touchend', te('left'), {passive:false});
-btnDuck.addEventListener('touchstart', ts('duck'), {passive:false});
-btnDuck.addEventListener('touchend', te('duck'), {passive:false});
-btnJump.addEventListener('touchstart', ts('jump'), {passive:false});
-btnJump.addEventListener('touchend', te('jump'), {passive:false});
-btnRight.addEventListener('touchstart', ts('right'), {passive:false});
-btnRight.addEventListener('touchend', te('right'), {passive:false});
+touchLayer.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  if (!game.running) return;
+  for (const touch of e.changedTouches) {
+    const x = touch.clientX;
+    const y = touch.clientY;
+    // Try stroking a cat first
+    if (tryCatStroke(x, y)) continue;
+    const actions = getTouchActions(x, y);
+    activeTouches[touch.identifier] = actions;
+    if (actions.jump) game.input.jump = true;
+    if (actions.duck) game.input.duck = true;
+    if (actions.left) game.input.left = true;
+    if (actions.right) game.input.right = true;
+  }
+}, {passive:false});
 
-// Mouse fallback
-btnLeft.addEventListener('mousedown', () => game.input.left = true);
-btnLeft.addEventListener('mouseup', () => game.input.left = false);
-btnLeft.addEventListener('mouseleave', () => game.input.left = false);
-btnDuck.addEventListener('mousedown', () => game.input.duck = true);
-btnDuck.addEventListener('mouseup', () => game.input.duck = false);
-btnDuck.addEventListener('mouseleave', () => game.input.duck = false);
-btnRight.addEventListener('mousedown', () => game.input.right = true);
-btnRight.addEventListener('mouseup', () => game.input.right = false);
-btnRight.addEventListener('mouseleave', () => game.input.right = false);
-btnJump.addEventListener('mousedown', () => game.input.jump = true);
+touchLayer.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    const actions = activeTouches[touch.identifier];
+    if (actions) {
+      if (actions.duck) game.input.duck = false;
+      if (actions.left) game.input.left = false;
+      if (actions.right) game.input.right = false;
+      delete activeTouches[touch.identifier];
+    }
+  }
+}, {passive:false});
+
+touchLayer.addEventListener('touchcancel', function(e) {
+  for (const touch of e.changedTouches) {
+    const actions = activeTouches[touch.identifier];
+    if (actions) {
+      if (actions.duck) game.input.duck = false;
+      if (actions.left) game.input.left = false;
+      if (actions.right) game.input.right = false;
+      delete activeTouches[touch.identifier];
+    }
+  }
+}, {passive:false});
+
+// Mouse fallback for desktop: click position determines action
+touchLayer.addEventListener('mousedown', function(e) {
+  if (!game.running) return;
+  const x = e.clientX, y = e.clientY;
+  if (tryCatStroke(x, y)) return;
+  const actions = getTouchActions(x, y);
+  touchLayer._mouseActions = actions;
+  if (actions.jump) game.input.jump = true;
+  if (actions.duck) game.input.duck = true;
+  if (actions.left) game.input.left = true;
+  if (actions.right) game.input.right = true;
+});
+touchLayer.addEventListener('mouseup', function() {
+  const actions = touchLayer._mouseActions;
+  if (actions) {
+    if (actions.duck) game.input.duck = false;
+    if (actions.left) game.input.left = false;
+    if (actions.right) game.input.right = false;
+    touchLayer._mouseActions = null;
+  }
+});
 
 throwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwBurger(); }, {passive:false});
 throwBtn.addEventListener('click', () => throwBurger());
