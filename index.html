@@ -31,12 +31,12 @@ canvas {
   line-height: 1.5;
 }
 #touch-controls {
-  position: absolute; bottom: 0; left: 0; width: 100%; height: 35%;
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 30%;
   pointer-events: all; display: flex; z-index: 20;
 }
 .touch-zone {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  opacity: 0.12; font-size: 48px; color: #fff;
+  opacity: 0.12; font-size: 36px; color: #fff;
   border: 1px solid rgba(255,255,255,0.08);
 }
 .touch-zone:active { opacity: 0.25; }
@@ -50,9 +50,9 @@ canvas {
   font-size: 28px; margin-bottom: 6px;
   text-shadow: 3px 3px 0 #2d5f8a;
 }
-#start-screen .subtitle { font-size: 14px; color: #8ac; margin-bottom: 24px; }
+#start-screen .subtitle { font-size: 14px; color: #8ac; margin-bottom: 20px; }
 #start-screen .instructions {
-  font-size: 13px; color: #bbb; line-height: 1.8; margin-bottom: 24px; padding: 0 20px;
+  font-size: 12px; color: #bbb; line-height: 1.8; margin-bottom: 20px; padding: 0 20px;
 }
 .play-btn {
   background: #4a9; color: #fff; border: none; padding: 16px 48px;
@@ -64,16 +64,22 @@ canvas {
 #gameover-screen h2 { font-size: 24px; margin-bottom: 16px; color: #f66; }
 #gameover-screen .final-score { font-size: 18px; margin-bottom: 8px; }
 #gameover-screen .reason { font-size: 14px; color: #aaa; margin-bottom: 24px; }
-#throw-btn {
-  position: absolute; bottom: 37%; right: 16px;
-  width: 64px; height: 64px; border-radius: 50%;
-  background: rgba(255, 160, 60, 0.7); border: 2px solid rgba(255,200,100,0.8);
-  color: #fff; font-size: 24px; z-index: 25;
-  pointer-events: all; display: none;
-  align-items: center; justify-content: center;
+.action-btn {
+  position: absolute; width: 60px; height: 60px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.5); color: #fff;
+  font-size: 22px; z-index: 25; pointer-events: all;
+  display: none; align-items: center; justify-content: center;
   font-family: monospace;
 }
-#throw-btn:active { background: rgba(255, 160, 60, 0.95); }
+.action-btn:active { transform: scale(0.92); }
+#throw-btn {
+  bottom: 32%; right: 16px;
+  background: rgba(255, 160, 60, 0.7);
+}
+#fire-btn {
+  bottom: 32%; right: 90px;
+  background: rgba(255, 80, 30, 0.7);
+}
 </style>
 </head>
 <body>
@@ -83,20 +89,23 @@ canvas {
 </div>
 <div id="touch-controls">
   <div class="touch-zone" id="btn-left">&#9664;</div>
+  <div class="touch-zone" id="btn-duck">&#9660;</div>
   <div class="touch-zone" id="btn-jump">&#9650;</div>
   <div class="touch-zone" id="btn-right">&#9654;</div>
 </div>
-<button id="throw-btn">&#127828;</button>
+<button class="action-btn" id="throw-btn">&#127828;</button>
+<button class="action-btn" id="fire-btn">&#128293;</button>
 
 <div id="start-screen">
   <h1>SNOWSTORM</h1>
   <div class="subtitle">at Bjergvej</div>
   <div class="instructions">
     Sara must survive the blizzard!<br><br>
-    &#9664; LEFT &nbsp;|&nbsp; JUMP &#9650; &nbsp;|&nbsp; RIGHT &#9654;<br><br>
-    Collect firewood &amp; burgers<br>
-    Jump over snowdrifts and cats!<br>
-    Feed Emily when she appears<br><br>
+    &#9664; LEFT | &#9660; DUCK | &#9650; JUMP | RIGHT &#9654;<br><br>
+    <b>JUMP</b> over snowdrifts &amp; cats<br>
+    <b>DUCK</b> under high snowstorms<br>
+    <b>FIREWOOD</b> - light fires to melt snow!<br>
+    <b>BURGERS</b> - throw to feed Emily<br><br>
     Watch out for Effie &amp; Nora!
   </div>
   <button class="play-btn" id="start-btn">PLAY</button>
@@ -112,53 +121,60 @@ canvas {
 
 <script>
 // ============================================================
-// SNOWSTORM AT BJERGVEJ - Landscape-optimized Platformer
+// SNOWSTORM AT BJERGVEJ
 // ============================================================
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// --- Responsive sizing - optimized for landscape ---
 let W, H, SCALE, GROUND_Y;
 function resize() {
   W = window.innerWidth;
   H = window.innerHeight;
   canvas.width = W;
   canvas.height = H;
-  // Bigger scale: use the larger dimension for landscape phones
-  const ref = Math.max(W, H);
-  SCALE = Math.max(2, Math.round(ref / 160));
-  // Cap scale so sprites don't get absurdly huge on tablets
+  SCALE = Math.max(2, Math.round(Math.max(W, H) / 160));
   if (SCALE > 6) SCALE = 6;
   GROUND_Y = H - 60;
 }
 resize();
 window.addEventListener('resize', resize);
 
-// --- Pixel art drawing helpers ---
 function drawPixelSprite(x, y, pixels, scale) {
   const s = scale || SCALE;
-  for (let row = 0; row < pixels.length; row++) {
-    for (let col = 0; col < pixels[row].length; col++) {
-      if (pixels[row][col]) {
-        ctx.fillStyle = pixels[row][col];
-        ctx.fillRect(
-          Math.floor(x + col * s),
-          Math.floor(y + row * s),
-          s, s
-        );
+  for (let r = 0; r < pixels.length; r++) {
+    for (let c = 0; c < pixels[r].length; c++) {
+      if (pixels[r][c]) {
+        ctx.fillStyle = pixels[r][c];
+        ctx.fillRect(Math.floor(x + c * s), Math.floor(y + r * s), s, s);
       }
     }
   }
 }
 
-// --- SPRITE DATA ---
+// ---- SPRITES ----
 
-// Sara: short-haired woman in flannel shirt (12x16)
-function saraSprite(frame) {
+function saraSprite(frame, ducking) {
   const _ = null;
   const h = '#5a3825', s = '#f5c6a0', e = '#222';
   const f1 = '#c0392b', f2 = '#2c3e50', p = '#34495e', b = '#2c2c2c', m = '#d9a88c';
+
+  if (ducking) {
+    // Compact ducking pose (12x10)
+    return [
+      [_,_,_,h,h,h,h,h,h,_,_,_],
+      [_,_,h,s,s,s,s,s,s,h,_,_],
+      [_,_,s,s,e,s,s,e,s,s,_,_],
+      [_,_,_,s,s,m,s,s,_,_,_,_],
+      [_,f1,f1,f1,f2,f1,f2,f1,f1,f1,_,_],
+      [_,s,f1,f2,f1,f2,f1,f2,f1,s,_,_],
+      [_,_,f1,f2,f1,f2,f1,f2,f1,_,_,_],
+      [_,_,_,p,p,p,p,p,p,_,_,_],
+      [_,_,b,b,p,p,p,p,b,b,_,_],
+      [_,b,b,b,_,_,_,_,b,b,b,_],
+    ];
+  }
+
   const base = [
     [_,_,_,h,h,h,h,h,h,_,_,_],
     [_,_,h,h,h,h,h,h,h,h,_,_],
@@ -189,7 +205,6 @@ function saraSprite(frame) {
   return base;
 }
 
-// Emily: taller woman (14x20) with long brown hair, purple top
 function emilySprite(frame) {
   const _ = null;
   const h = '#6b3a2a', s = '#f5c6a0', e = '#222', m = '#d9a88c';
@@ -216,7 +231,6 @@ function emilySprite(frame) {
     [_,_,_,_,b,b,_,_,b,b,_,_,_,_],
     [_,_,_,b,b,b,_,_,b,b,b,_,_,_],
   ];
-  // Wave hands when hungry
   if (Math.floor(frame / 15) % 2 === 0) {
     base[10] = [s,s,h,d,d2,d,d2,d,d2,d,h,s,s,_];
   }
@@ -224,11 +238,12 @@ function emilySprite(frame) {
 }
 
 // Nora: big fluffy brown cat (16x12)
-function noraSprite() {
+function noraSprite(frame) {
   const _ = null;
-  const c = '#8B5E3C', c2 = '#A0724B', f = '#C4956A'; // brown + fluffy highlights
+  const c = '#8B5E3C', c2 = '#A0724B', f = '#C4956A';
   const e = '#4a4', n = '#faa', w = '#fff';
-  return [
+  // Nora sits and lounges - she's big and in the way
+  const base = [
     [_,c,c,_,_,_,_,_,_,_,_,_,_,c,c,_],
     [c,c2,c,c,_,_,_,_,_,_,_,_,c,c2,c,_],
     [c,f,c2,c,c,c,c,c,c,c,c,c,c,f,c,_],
@@ -242,14 +257,20 @@ function noraSprite() {
     [_,_,c,_,c,c,_,_,c,c,_,c,_,_,_,_],
     [_,_,c,_,c,c,_,_,c,c,_,c,_,_,_,_],
   ];
+  // Tail swish animation
+  if (frame % 2 === 0) {
+    base[8] = [_,c,f,c2,c,c,c,c,c,c,c2,f,c,c,c,c];
+    base[9] = [_,_,c,f,c,c,c,c,c,c,f,c,_,_,c,c];
+  }
+  return base;
 }
 
-// Effie: ginger and white cat (14x10)
-function effieSprite() {
+// Effie: ginger and white cat (14x10) - fast and darty
+function effieSprite(frame) {
   const _ = null;
   const g = '#E87A2E', g2 = '#D46A1E', w = '#fff', ww = '#f0e8e0';
   const e = '#4c4', n = '#faa';
-  return [
+  const base = [
     [_,g,g,_,_,_,_,_,_,_,_,g,g,_],
     [g,g2,g,g,_,_,_,_,_,_,g,g2,g,_],
     [g,w,g2,g,g,g,g,g,g,g,g,w,g,_],
@@ -261,9 +282,14 @@ function effieSprite() {
     [_,_,g,_,g,g,_,g,g,_,g,_,_,_],
     [_,_,g,_,g,g,_,g,g,_,g,_,_,_],
   ];
+  // Running legs animation
+  if (frame % 2 === 0) {
+    base[8] = [_,_,_,g,g,_,_,_,g,g,_,_,_,_];
+    base[9] = [_,_,g,_,_,_,_,g,_,_,_,_,_,_];
+  }
+  return base;
 }
 
-// Snowstorm block (8x8)
 function snowstormSprite() {
   const w = '#e8eaf0', w2 = '#c8d0e0', b = '#a0b0d0', _ = null;
   return [
@@ -278,7 +304,6 @@ function snowstormSprite() {
   ];
 }
 
-// Snowdrift ground obstacle (10x6) - must jump over
 function snowdriftSprite() {
   const w = '#dde0f0', w2 = '#c5cae0', b = '#b0b8d0', _ = null;
   return [
@@ -291,7 +316,6 @@ function snowdriftSprite() {
   ];
 }
 
-// Firewood (8x6)
 function firewoodSprite() {
   const br = '#8B4513', db = '#654321', o = '#D2691E', _ = null;
   return [
@@ -304,7 +328,6 @@ function firewoodSprite() {
   ];
 }
 
-// Burger (8x7)
 function burgerSprite() {
   const bn = '#D2A050', mt = '#8B2500', lt = '#4CAF50', ch = '#FFD700', tm = '#ff4444', _ = null;
   return [
@@ -318,14 +341,45 @@ function burgerSprite() {
   ];
 }
 
-// --- GAME STATE ---
-const GRAVITY = 0.4;
-const JUMP_FORCE = -10;
+// Campfire sprite (8x8)
+function campfireSprite(frame) {
+  const _ = null;
+  const br = '#8B4513', db = '#654321';
+  const f1 = '#ff4400', f2 = '#ff8800', f3 = '#ffcc00', f4 = '#ff6600';
+  // Animate flames
+  if (frame % 2 === 0) {
+    return [
+      [_,_,_,_,f3,_,_,_],
+      [_,_,_,f3,f2,f3,_,_],
+      [_,_,f2,f1,f3,f2,_,_],
+      [_,f2,f1,f4,f1,f3,f2,_],
+      [_,f1,f4,f2,f4,f1,f4,_],
+      [f1,f4,f1,f1,f1,f4,f1,_],
+      [_,db,br,br,br,br,db,_],
+      [_,br,db,br,db,br,br,_],
+    ];
+  } else {
+    return [
+      [_,_,_,f3,_,_,_,_],
+      [_,_,f3,f2,f3,_,_,_],
+      [_,_,f2,f3,f1,f2,_,_],
+      [_,f2,f3,f1,f4,f2,f2,_],
+      [_,f4,f1,f4,f2,f1,f4,_],
+      [f4,f1,f4,f1,f4,f1,f1,_],
+      [_,db,br,br,br,br,db,_],
+      [_,br,db,br,db,br,br,_],
+    ];
+  }
+}
+
+// ---- GAME STATE ----
+const GRAVITY = 0.38;
+const JUMP_FORCE = -11.5;
 const MOVE_SPEED = 3.5;
-const SCROLL_SPEED_BASE = 1.0;
+const SCROLL_SPEED_BASE = 0.9;
 
 let game = {};
-let highScore = parseInt(localStorage.getItem('snowstorm_hi') || '0');
+let highScore = parseInt(localStorage.getItem('snowstorm_hi2') || '0');
 
 function initGame() {
   const saraH = 16 * SCALE;
@@ -340,15 +394,16 @@ function initGame() {
     deathReason: '',
 
     sara: {
-      x: W * 0.25,
+      x: W * 0.35,
       y: GROUND_Y - saraH,
-      vy: 0,
-      vx: 0,
+      vy: 0, vx: 0,
       onGround: true,
       width: 12 * SCALE,
       height: saraH,
-      frame: 0,
-      frameTimer: 0,
+      standingHeight: saraH,
+      duckHeight: 10 * SCALE,
+      ducking: false,
+      frame: 0, frameTimer: 0,
       facing: 1,
     },
 
@@ -358,31 +413,46 @@ function initGame() {
     firewoods: [],
     burgerItems: [],
     cats: [],
-    emilys: [],
     thrownBurgers: [],
+    campfires: [],
     particles: [],
     snowflakes: [],
 
+    // Emily: persistent character on the left side
+    emily: {
+      x: 10,
+      y: GROUND_Y - 20 * SCALE,
+      baseWidth: 14 * SCALE,
+      baseHeight: 20 * SCALE,
+      width: 14 * SCALE,
+      height: 20 * SCALE,
+      scale: 1.0,         // grows when fed
+      timesFed: 0,
+      hungry: false,
+      hungryTimer: 180,   // first HUNGRY comes quickly
+      hungryCooldown: 0,  // how long she stays hungry
+      frame: 0,
+    },
+
     spawnTimer: 0,
-    emilyTimer: 350,
+    catTimer: 120,     // First cat appears early!
     difficultyTimer: 0,
 
-    input: { left: false, right: false, jump: false },
+    input: { left: false, right: false, jump: false, duck: false },
   };
 
-  // Init snowflakes
   for (let i = 0; i < 80; i++) {
     game.snowflakes.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
+      x: Math.random() * W, y: Math.random() * H,
       size: Math.random() * 3 + 1,
       speed: Math.random() * 1.5 + 0.5,
       drift: Math.random() * 0.8 - 0.4,
     });
   }
 
-  // Generate initial platforms with collectibles on them
   generateInitialPlatforms();
+  // Spawn first cat immediately at a visible distance
+  spawnCat(W * 0.8);
 }
 
 function generateInitialPlatforms() {
@@ -392,163 +462,174 @@ function generateInitialPlatforms() {
     const pw = Math.random() * 80 + 60;
     const py = GROUND_Y - Math.random() * 80 - 50;
     game.platforms.push({ x, y: py, w: pw, h: 8 * SCALE });
-    // Place a collectible on some platforms
     if (Math.random() > 0.4) {
       const itemY = py - 7 * SCALE;
       if (Math.random() > 0.5) {
-        game.firewoods.push({ x: x + pw / 2 - 4 * SCALE, y: itemY, width: 8 * SCALE, height: 6 * SCALE });
+        game.firewoods.push({ x: x + pw/2 - 4*SCALE, y: itemY, width: 8*SCALE, height: 6*SCALE });
       } else {
-        game.burgerItems.push({ x: x + pw / 2 - 4 * SCALE, y: itemY, width: 8 * SCALE, height: 7 * SCALE });
+        game.burgerItems.push({ x: x + pw/2 - 4*SCALE, y: itemY, width: 8*SCALE, height: 7*SCALE });
       }
     }
   }
 }
 
-// --- SPAWNING ---
+function spawnCat(xPos) {
+  const isNora = Math.random() > 0.5;
+  const catW = isNora ? 16 * SCALE : 14 * SCALE;
+  const catH = isNora ? 12 * SCALE : 10 * SCALE;
+  game.cats.push({
+    x: xPos,
+    y: GROUND_Y - catH,
+    width: catW, height: catH,
+    // Nora is slow and sits; Effie is fast and darty
+    speed: isNora ? game.scrollSpeed + 0.2 : game.scrollSpeed + 0.8 + Math.random() * 0.6,
+    name: isNora ? 'Nora' : 'Effie',
+    jumpTimer: isNora ? 200 : 40 + Math.random() * 40,
+    vy: 0,
+    baseY: GROUND_Y - catH,
+    frame: 0,
+    // Effie darts back and forth
+    dartTimer: isNora ? 999 : 60 + Math.random() * 40,
+    dartDir: 1,
+  });
+}
+
+// ---- SPAWNING ----
 function spawnEntities() {
   game.spawnTimer++;
   const diff = Math.min(game.score / 800, 2.5);
 
-  // Platforms - spawn regularly with collectibles on top
+  // Platforms with collectibles
   if (game.spawnTimer % Math.max(50, 80 - diff * 6) === 0) {
     const py = GROUND_Y - Math.random() * 90 - 45;
     const pw = Math.random() * 80 + 55;
     game.platforms.push({ x: W + 40, y: py, w: pw, h: 8 * SCALE });
-    // Often put a collectible on the platform - gives reason to jump up
     if (Math.random() > 0.3) {
       const itemY = py - 7 * SCALE;
       if (Math.random() > 0.5) {
-        game.firewoods.push({ x: W + 40 + pw / 2 - 4 * SCALE, y: itemY, width: 8 * SCALE, height: 6 * SCALE });
+        game.firewoods.push({ x: W+40+pw/2-4*SCALE, y: itemY, width: 8*SCALE, height: 6*SCALE });
       } else {
-        game.burgerItems.push({ x: W + 40 + pw / 2 - 4 * SCALE, y: itemY, width: 8 * SCALE, height: 7 * SCALE });
+        game.burgerItems.push({ x: W+40+pw/2-4*SCALE, y: itemY, width: 8*SCALE, height: 7*SCALE });
       }
     }
   }
 
-  // Snowdrifts on ground - MUST jump over these
-  if (game.spawnTimer % Math.max(60, 100 - diff * 8) === 0) {
+  // Snowdrifts on ground - JUMP over
+  if (game.spawnTimer % Math.max(70, 110 - diff * 8) === 0) {
     game.snowdrifts.push({
       x: W + 40,
       y: GROUND_Y - 6 * SCALE,
-      width: 10 * SCALE,
-      height: 6 * SCALE,
+      width: 10 * SCALE, height: 6 * SCALE,
       speed: game.scrollSpeed,
     });
   }
 
-  // Flying snowstorms - slower approach
-  if (game.spawnTimer % Math.max(80, 120 - diff * 10) === 0) {
-    const sy = GROUND_Y - Math.random() * 80 - 16 * SCALE;
+  // Snowstorms - TWO types: LOW (jump over) and HIGH (duck under)
+  if (game.spawnTimer % Math.max(90, 130 - diff * 10) === 0) {
+    const isHigh = Math.random() > 0.45;
+    const sy = isHigh
+      ? GROUND_Y - 14 * SCALE - Math.random() * 20   // head height - DUCK
+      : GROUND_Y - 6 * SCALE - Math.random() * 10;    // ground level - JUMP
     game.snowstorms.push({
       x: W + 40, y: sy,
       width: 8 * SCALE * (Math.random() > 0.6 ? 2 : 1),
       height: 8 * SCALE,
-      speed: game.scrollSpeed + 0.3 + Math.random() * 0.7,
+      speed: game.scrollSpeed + 0.2 + Math.random() * 0.5,
+      isHigh: isHigh,
     });
   }
 
-  // Firewood on ground too
-  if (game.spawnTimer % 120 === 0 && Math.random() > 0.4) {
+  // Firewood on ground
+  if (game.spawnTimer % 100 === 0 && Math.random() > 0.3) {
     game.firewoods.push({
-      x: W + 40,
-      y: GROUND_Y - 6 * SCALE,
-      width: 8 * SCALE,
-      height: 6 * SCALE,
+      x: W + 40, y: GROUND_Y - 6*SCALE,
+      width: 8*SCALE, height: 6*SCALE,
     });
   }
 
-  // Burgers on ground sometimes
-  if (game.spawnTimer % 180 === 0 && Math.random() > 0.5) {
+  // Burgers on ground
+  if (game.spawnTimer % 160 === 0 && Math.random() > 0.4) {
     game.burgerItems.push({
-      x: W + 40,
-      y: GROUND_Y - 7 * SCALE,
-      width: 8 * SCALE,
-      height: 7 * SCALE,
+      x: W + 40, y: GROUND_Y - 7*SCALE,
+      width: 8*SCALE, height: 7*SCALE,
     });
   }
 
-  // Cats: alternate between Nora and Effie
-  if (game.spawnTimer % Math.max(150, 250 - diff * 15) === 0 && Math.random() > 0.3) {
-    const isNora = Math.random() > 0.5;
-    const catW = isNora ? 16 * SCALE : 14 * SCALE;
-    const catH = isNora ? 12 * SCALE : 10 * SCALE;
-    game.cats.push({
-      x: W + 40,
-      y: GROUND_Y - catH,
-      width: catW,
-      height: catH,
-      speed: game.scrollSpeed + 0.3 + Math.random() * 0.4,
-      name: isNora ? 'Nora' : 'Effie',
-      jumpTimer: 60 + Math.random() * 80,
-      vy: 0,
-      baseY: GROUND_Y - catH,
-    });
+  // CATS - spawn frequently and guaranteed
+  game.catTimer--;
+  if (game.catTimer <= 0) {
+    spawnCat(W + 40);
+    // Next cat in 80-160 frames (roughly 1.5-3 seconds)
+    game.catTimer = Math.max(60, 120 - diff * 10) + Math.random() * 60;
   }
 
-  // Emily - appears periodically
-  game.emilyTimer--;
-  if (game.emilyTimer <= 0) {
-    const emilyH = 20 * SCALE;
-    game.emilys.push({
-      x: W + 40,
-      y: GROUND_Y - emilyH,
-      width: 14 * SCALE,
-      height: emilyH,
-      timer: 400,
-      fed: false,
-      frame: 0,
-    });
-    game.emilyTimer = 450 + Math.random() * 200;
+  // Emily hunger cycle
+  const em = game.emily;
+  if (!em.hungry) {
+    em.hungryTimer--;
+    if (em.hungryTimer <= 0) {
+      em.hungry = true;
+      em.hungryCooldown = 300; // hungry for ~5 seconds
+    }
+  } else {
+    em.hungryCooldown--;
+    if (em.hungryCooldown <= 0) {
+      em.hungry = false;
+      em.hungryTimer = 200 + Math.random() * 150; // next hunger cycle
+    }
   }
+  em.frame++;
 }
 
-// --- PHYSICS & UPDATE ---
+// ---- UPDATE ----
 function update() {
   if (!game.running) return;
 
   game.frameCount++;
   game.difficultyTimer++;
-  // Very gradual difficulty increase
   if (game.difficultyTimer % 900 === 0) {
-    game.scrollSpeed = Math.min(SCROLL_SPEED_BASE + game.difficultyTimer / 2000, 3.0);
+    game.scrollSpeed = Math.min(SCROLL_SPEED_BASE + game.difficultyTimer / 2500, 2.5);
   }
 
   const sara = game.sara;
   const inp = game.input;
 
-  // Horizontal movement
-  if (inp.left) {
-    sara.vx = -MOVE_SPEED;
-    sara.facing = -1;
-  } else if (inp.right) {
-    sara.vx = MOVE_SPEED;
-    sara.facing = 1;
-  } else {
-    sara.vx *= 0.7;
-    if (Math.abs(sara.vx) < 0.2) sara.vx = 0;
+  // Duck mechanic
+  if (inp.duck && sara.onGround) {
+    if (!sara.ducking) {
+      sara.ducking = true;
+      sara.height = sara.duckHeight;
+      sara.y = GROUND_Y - sara.duckHeight;
+    }
+  } else if (sara.ducking) {
+    sara.ducking = false;
+    sara.height = sara.standingHeight;
+    sara.y = GROUND_Y - sara.standingHeight;
   }
 
-  // Auto-scroll push (gentle)
+  // Movement
+  if (inp.left) { sara.vx = -MOVE_SPEED; sara.facing = -1; }
+  else if (inp.right) { sara.vx = MOVE_SPEED; sara.facing = 1; }
+  else { sara.vx *= 0.7; if (Math.abs(sara.vx) < 0.2) sara.vx = 0; }
+
   sara.x -= game.scrollSpeed * 0.4;
   sara.x += sara.vx;
-
-  // Clamp horizontal
   if (sara.x < 0) sara.x = 0;
   if (sara.x + sara.width > W) sara.x = W - sara.width;
 
-  // Jump
-  if (inp.jump && sara.onGround) {
+  // Jump (not while ducking)
+  if (inp.jump && sara.onGround && !sara.ducking) {
     sara.vy = JUMP_FORCE;
     sara.onGround = false;
-    spawnParticles(sara.x + sara.width / 2, sara.y + sara.height, 5, '#fff');
+    spawnParticles(sara.x + sara.width/2, sara.y + sara.height, 5, '#fff');
   }
   inp.jump = false;
 
-  // Gravity (lower = floatier, more forgiving)
+  // Gravity
   sara.vy += GRAVITY;
   sara.y += sara.vy;
 
-  // Ground collision
+  // Ground
   sara.onGround = false;
   if (sara.y + sara.height >= GROUND_Y) {
     sara.y = GROUND_Y - sara.height;
@@ -568,23 +649,19 @@ function update() {
   }
 
   // Animation
-  if (Math.abs(sara.vx) > 0.5 && sara.onGround) {
+  if (sara.ducking) {
+    sara.frame = 0;
+  } else if (Math.abs(sara.vx) > 0.5 && sara.onGround) {
     sara.frameTimer++;
-    if (sara.frameTimer > 8) {
-      sara.frame = (sara.frame + 1) % 3;
-      sara.frameTimer = 0;
-    }
+    if (sara.frameTimer > 8) { sara.frame = (sara.frame + 1) % 3; sara.frameTimer = 0; }
   } else if (!sara.onGround) {
     sara.frame = 1;
   } else {
     sara.frame = 0;
   }
 
-  // Fell off left side
-  if (sara.x + sara.width < -20) {
-    gameOver('Swept away by the blizzard!');
-    return;
-  }
+  // Fell off left
+  if (sara.x + sara.width < -20) { gameOver('Swept away by the blizzard!'); return; }
 
   const sx = game.scrollSpeed;
 
@@ -594,25 +671,65 @@ function update() {
     if (game.platforms[i].x + game.platforms[i].w < -60) game.platforms.splice(i, 1);
   }
 
-  // Snowdrifts (ground obstacles - must jump)
+  // Campfires - they burn and melt snow!
+  for (let i = game.campfires.length - 1; i >= 0; i--) {
+    const cf = game.campfires[i];
+    cf.x -= sx;
+    cf.life--;
+    cf.frame++;
+    if (cf.life <= 0) { game.campfires.splice(i, 1); continue; }
+
+    // Melt nearby snowstorms
+    const meltRange = 10 * SCALE;
+    for (let j = game.snowstorms.length - 1; j >= 0; j--) {
+      const ss = game.snowstorms[j];
+      const dx = (cf.x + cf.width/2) - (ss.x + ss.width/2);
+      const dy = (cf.y + cf.height/2) - (ss.y + ss.height/2);
+      if (Math.abs(dx) < meltRange && Math.abs(dy) < meltRange) {
+        game.score += 15;
+        spawnParticles(ss.x + ss.width/2, ss.y, 8, '#87CEEB');
+        game.particles.push({
+          x: ss.x, y: ss.y - 15, vx: 0, vy: -1.2,
+          life: 35, color: '#87CEEB', text: 'MELTED!', size: 3,
+        });
+        game.snowstorms.splice(j, 1);
+      }
+    }
+    // Melt snowdrifts too
+    for (let j = game.snowdrifts.length - 1; j >= 0; j--) {
+      const sd = game.snowdrifts[j];
+      const dx = (cf.x + cf.width/2) - (sd.x + sd.width/2);
+      if (Math.abs(dx) < meltRange) {
+        game.score += 10;
+        spawnParticles(sd.x + sd.width/2, sd.y, 6, '#87CEEB');
+        game.particles.push({
+          x: sd.x, y: sd.y - 15, vx: 0, vy: -1.2,
+          life: 35, color: '#87CEEB', text: 'MELTED!', size: 3,
+        });
+        game.snowdrifts.splice(j, 1);
+      }
+    }
+  }
+
+  // Snowdrifts
   for (let i = game.snowdrifts.length - 1; i >= 0; i--) {
     const sd = game.snowdrifts[i];
     sd.x -= sd.speed;
     if (sd.x + sd.width < -60) { game.snowdrifts.splice(i, 1); continue; }
     if (rectsOverlap(sara, sd)) {
-      spawnParticles(sara.x + sara.width / 2, sara.y + sara.height / 2, 12, '#c8d0e0');
+      spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 12, '#c8d0e0');
       gameOver('Crashed into a snowdrift!');
       return;
     }
   }
 
-  // Snowstorms (flying)
+  // Snowstorms
   for (let i = game.snowstorms.length - 1; i >= 0; i--) {
     const ss = game.snowstorms[i];
     ss.x -= ss.speed;
     if (ss.x + ss.width < -60) { game.snowstorms.splice(i, 1); continue; }
     if (rectsOverlap(sara, ss)) {
-      spawnParticles(sara.x + sara.width / 2, sara.y + sara.height / 2, 15, '#c8d0e0');
+      spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 15, '#c8d0e0');
       gameOver('Hit by a snowstorm!');
       return;
     }
@@ -627,10 +744,11 @@ function update() {
       game.score += 25;
       spawnParticles(game.firewoods[i].x, game.firewoods[i].y, 5, '#D2691E');
       game.firewoods.splice(i, 1);
+      updateActionBtns();
     }
   }
 
-  // Burger items
+  // Burgers
   for (let i = game.burgerItems.length - 1; i >= 0; i--) {
     game.burgerItems[i].x -= sx;
     if (game.burgerItems[i].x < -60) { game.burgerItems.splice(i, 1); continue; }
@@ -638,69 +756,92 @@ function update() {
       game.burgers++;
       spawnParticles(game.burgerItems[i].x, game.burgerItems[i].y, 5, '#FFD700');
       game.burgerItems.splice(i, 1);
-      updateThrowBtn();
+      updateActionBtns();
     }
   }
 
-  // Cats
+  // Cats with behaviors
   for (let i = game.cats.length - 1; i >= 0; i--) {
     const cat = game.cats[i];
-    cat.x -= cat.speed;
-    cat.jumpTimer--;
-    if (cat.jumpTimer <= 0) {
-      cat.vy = -5;
-      cat.jumpTimer = 100 + Math.random() * 80;
+    cat.frame++;
+
+    if (cat.name === 'Effie') {
+      // Effie: fast, darts back and forth unpredictably
+      cat.dartTimer--;
+      if (cat.dartTimer <= 0) {
+        cat.dartDir *= -1;
+        cat.dartTimer = 30 + Math.random() * 40;
+      }
+      cat.x -= cat.speed + cat.dartDir * 0.8;
+      // Effie jumps frequently
+      cat.jumpTimer--;
+      if (cat.jumpTimer <= 0) {
+        cat.vy = -7;
+        cat.jumpTimer = 30 + Math.random() * 30;
+      }
+    } else {
+      // Nora: slow, sits in the way, occasional lazy jump
+      cat.x -= cat.speed;
+      cat.jumpTimer--;
+      if (cat.jumpTimer <= 0) {
+        cat.vy = -4;
+        cat.jumpTimer = 150 + Math.random() * 100;
+      }
     }
+
     cat.vy += 0.3;
     cat.y += cat.vy;
     if (cat.y > cat.baseY) { cat.y = cat.baseY; cat.vy = 0; }
 
-    if (cat.x < -80) { game.cats.splice(i, 1); continue; }
+    if (cat.x < -100) { game.cats.splice(i, 1); continue; }
     if (rectsOverlap(sara, cat)) {
-      spawnParticles(sara.x + sara.width / 2, sara.y + sara.height / 2, 10, cat.name === 'Nora' ? '#8B5E3C' : '#E87A2E');
+      const color = cat.name === 'Nora' ? '#8B5E3C' : '#E87A2E';
+      spawnParticles(sara.x + sara.width/2, sara.y + sara.height/2, 10, color);
       gameOver('Tripped over ' + cat.name + '!');
       return;
     }
   }
 
-  // Emily
-  for (let i = game.emilys.length - 1; i >= 0; i--) {
-    const em = game.emilys[i];
-    em.x -= sx * 0.25;
-    em.timer--;
-    em.frame++;
-    if (em.timer <= 0 || em.x < -80) { game.emilys.splice(i, 1); continue; }
+  // Emily stays on left - update her position
+  {
+    const em = game.emily;
+    em.y = GROUND_Y - em.height;
   }
 
-  // Thrown burgers
+  // Thrown burgers - check collision with Emily (only when hungry)
   for (let i = game.thrownBurgers.length - 1; i >= 0; i--) {
     const tb = game.thrownBurgers[i];
-    tb.x += tb.vx;
-    tb.y += tb.vy;
-    tb.vy += 0.12;
-    if (tb.x > W + 60 || tb.y > H + 60) { game.thrownBurgers.splice(i, 1); continue; }
-
-    for (let j = game.emilys.length - 1; j >= 0; j--) {
-      if (rectsOverlap(tb, game.emilys[j])) {
-        game.score += 100;
-        spawnParticles(game.emilys[j].x + game.emilys[j].width / 2, game.emilys[j].y, 12, '#FFD700');
-        game.particles.push({
-          x: game.emilys[j].x, y: game.emilys[j].y - 20,
-          vx: 0, vy: -1.5, life: 50, color: '#FFD700', text: '+100', size: 3,
-        });
-        game.emilys.splice(j, 1);
-        game.thrownBurgers.splice(i, 1);
-        break;
-      }
+    tb.x += tb.vx; tb.y += tb.vy; tb.vy += 0.12;
+    if (tb.x > W + 60 || tb.y > H + 60 || tb.x < -60) {
+      game.thrownBurgers.splice(i, 1); continue;
+    }
+    // Only feed Emily when she's hungry
+    const em = game.emily;
+    if (em.hungry && rectsOverlap(tb, em)) {
+      em.timesFed++;
+      em.hungry = false;
+      em.hungryTimer = 150 + Math.random() * 150;
+      // Grow Emily! She gets 8% bigger each feeding
+      em.scale = 1.0 + em.timesFed * 0.08;
+      em.width = Math.floor(em.baseWidth * em.scale);
+      em.height = Math.floor(em.baseHeight * em.scale);
+      em.y = GROUND_Y - em.height;
+      game.score += 100;
+      spawnParticles(em.x + em.width/2, em.y, 12, '#FFD700');
+      game.particles.push({
+        x: em.x + em.width/2, y: em.y - 20,
+        vx: 0, vy: -1.5, life: 50, color: '#FFD700',
+        text: '+100 YUM!', size: 3,
+      });
+      game.thrownBurgers.splice(i, 1);
+      continue;
     }
   }
 
   // Particles
   for (let i = game.particles.length - 1; i >= 0; i--) {
     const pt = game.particles[i];
-    pt.x += pt.vx;
-    pt.y += pt.vy;
-    pt.life--;
+    pt.x += pt.vx; pt.y += pt.vy; pt.life--;
     if (pt.life <= 0) game.particles.splice(i, 1);
   }
 
@@ -712,77 +853,80 @@ function update() {
     if (sf.x < -10) sf.x = W + 5;
   }
 
-  // Score from survival
   if (game.frameCount % 10 === 0) game.score++;
-
   spawnEntities();
 }
 
 function rectsOverlap(a, b) {
-  const shrink = 3;
-  return (
-    a.x + shrink < b.x + b.width - shrink &&
-    a.x + a.width - shrink > b.x + shrink &&
-    a.y + shrink < b.y + b.height - shrink &&
-    a.y + a.height - shrink > b.y + shrink
-  );
+  const s = 3;
+  return a.x+s < b.x+b.width-s && a.x+a.width-s > b.x+s &&
+         a.y+s < b.y+b.height-s && a.y+a.height-s > b.y+s;
 }
 
 function spawnParticles(x, y, count, color) {
   for (let i = 0; i < count; i++) {
     game.particles.push({
       x, y,
-      vx: (Math.random() - 0.5) * 4,
-      vy: (Math.random() - 0.5) * 4 - 1,
-      life: 20 + Math.random() * 15,
-      color,
-      size: Math.random() * 3 + 1,
+      vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4-1,
+      life: 20 + Math.random()*15, color,
+      size: Math.random()*3+1,
     });
   }
 }
 
 function gameOver(reason) {
   game.running = false;
-  game.deathReason = reason;
   if (game.score > highScore) {
     highScore = game.score;
-    localStorage.setItem('snowstorm_hi', highScore.toString());
+    localStorage.setItem('snowstorm_hi2', highScore.toString());
   }
   document.getElementById('final-score').textContent = 'Score: ' + game.score;
   document.getElementById('final-hi').textContent = 'Best: ' + highScore;
   document.getElementById('death-reason').textContent = reason;
   document.getElementById('gameover-screen').style.display = 'flex';
   document.getElementById('throw-btn').style.display = 'none';
+  document.getElementById('fire-btn').style.display = 'none';
 }
 
 function throwBurger() {
-  if (game.burgers <= 0 || !game.running) return;
+  if (!game.running || game.burgers <= 0) return;
   game.burgers--;
-  updateThrowBtn();
-  const sara = game.sara;
+  updateActionBtns();
+  const s = game.sara;
+  // Throw toward Emily (left side) - arc it over
   game.thrownBurgers.push({
-    x: sara.x + sara.width,
-    y: sara.y + sara.height * 0.3,
-    vx: 6,
-    vy: -1.5,
-    width: 8 * SCALE,
-    height: 7 * SCALE,
+    x: s.x, y: s.y + s.height * 0.3,
+    vx: -5, vy: -3, width: 8*SCALE, height: 7*SCALE,
   });
 }
 
-function updateThrowBtn() {
-  const btn = document.getElementById('throw-btn');
-  if (game.burgers > 0) {
-    btn.style.display = 'flex';
-    btn.textContent = '\uD83C\uDF54' + game.burgers;
-  } else {
-    btn.style.display = 'none';
-  }
+function lightFire() {
+  if (!game.running || game.firewood <= 0) return;
+  game.firewood--;
+  game.score += 10;
+  updateActionBtns();
+  const s = game.sara;
+  game.campfires.push({
+    x: s.x + s.width/2 - 4*SCALE,
+    y: GROUND_Y - 8*SCALE,
+    width: 8*SCALE, height: 8*SCALE,
+    life: 180, // Burns for 3 seconds
+    frame: 0,
+  });
+  spawnParticles(s.x + s.width/2, GROUND_Y - 8*SCALE, 5, '#ff8800');
 }
 
-// --- RENDERING ---
+function updateActionBtns() {
+  const tb = document.getElementById('throw-btn');
+  const fb = document.getElementById('fire-btn');
+  tb.style.display = game.burgers > 0 ? 'flex' : 'none';
+  tb.textContent = '\uD83C\uDF54' + game.burgers;
+  fb.style.display = game.firewood > 0 ? 'flex' : 'none';
+  fb.textContent = '\uD83D\uDD25' + game.firewood;
+}
+
+// ---- RENDERING ----
 function draw() {
-  // Sky gradient
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, '#1a1a3e');
   grad.addColorStop(0.4, '#2d3a5e');
@@ -804,7 +948,6 @@ function draw() {
   // Ground
   ctx.fillStyle = '#e8eaf6';
   ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
-  // Snow texture
   for (let x = 0; x < W; x += 6) {
     const h = Math.sin(x * 0.05 + game.scrollX * 0.01) * 4 + 3;
     ctx.fillStyle = '#f0f2ff';
@@ -823,14 +966,35 @@ function draw() {
     ctx.fillRect(Math.floor(plat.x) + 4, Math.floor(plat.y) + 2, plat.w - 8, 2);
   }
 
+  // Campfires
+  for (const cf of game.campfires) {
+    drawPixelSprite(cf.x, cf.y, campfireSprite(cf.frame));
+    // Warm glow
+    const glowAlpha = 0.15 + Math.sin(cf.frame * 0.2) * 0.08;
+    const glowR = 12 * SCALE;
+    const grd = ctx.createRadialGradient(
+      cf.x + cf.width/2, cf.y + cf.height/2, 0,
+      cf.x + cf.width/2, cf.y + cf.height/2, glowR
+    );
+    grd.addColorStop(0, 'rgba(255,150,50,' + glowAlpha + ')');
+    grd.addColorStop(1, 'rgba(255,80,0,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(cf.x - glowR, cf.y - glowR, glowR*2 + cf.width, glowR*2 + cf.height);
+  }
+
   // Snowdrifts
   for (const sd of game.snowdrifts) {
     drawPixelSprite(sd.x, sd.y, snowdriftSprite());
-    // Danger glow
-    ctx.globalAlpha = 0.15 + Math.sin(game.frameCount * 0.08) * 0.08;
+    ctx.globalAlpha = 0.15;
     ctx.fillStyle = '#a0b0d0';
-    ctx.fillRect(Math.floor(sd.x) - 2, Math.floor(sd.y) - 2, sd.width + 4, sd.height + 4);
+    ctx.fillRect(Math.floor(sd.x)-2, Math.floor(sd.y)-2, sd.width+4, sd.height+4);
     ctx.globalAlpha = 1;
+    // Label
+    ctx.fillStyle = '#aac';
+    ctx.font = Math.max(9, SCALE*2) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('JUMP!', Math.floor(sd.x + sd.width/2), Math.floor(sd.y - 4));
+    ctx.textAlign = 'left';
   }
 
   // Firewood
@@ -838,7 +1002,7 @@ function draw() {
     drawPixelSprite(fw.x, fw.y, firewoodSprite());
     ctx.globalAlpha = 0.2 + Math.sin(game.frameCount * 0.1) * 0.1;
     ctx.fillStyle = '#D2691E';
-    ctx.fillRect(Math.floor(fw.x) - 2, Math.floor(fw.y) - 2, fw.width + 4, fw.height + 4);
+    ctx.fillRect(Math.floor(fw.x)-2, Math.floor(fw.y)-2, fw.width+4, fw.height+4);
     ctx.globalAlpha = 1;
   }
 
@@ -847,11 +1011,11 @@ function draw() {
     drawPixelSprite(bi.x, bi.y, burgerSprite());
     ctx.globalAlpha = 0.15 + Math.sin(game.frameCount * 0.12) * 0.1;
     ctx.fillStyle = '#FFD700';
-    ctx.fillRect(Math.floor(bi.x) - 2, Math.floor(bi.y) - 2, bi.width + 4, bi.height + 4);
+    ctx.fillRect(Math.floor(bi.x)-2, Math.floor(bi.y)-2, bi.width+4, bi.height+4);
     ctx.globalAlpha = 1;
   }
 
-  // Snowstorms
+  // Snowstorms with DUCK/JUMP labels
   for (const ss of game.snowstorms) {
     const cols = Math.ceil(ss.width / (8 * SCALE));
     for (let c = 0; c < cols; c++) {
@@ -860,49 +1024,70 @@ function draw() {
     ctx.globalAlpha = 0.3;
     ctx.fillStyle = '#c8d0e0';
     const ox = Math.sin(game.frameCount * 0.15) * 4;
-    ctx.fillRect(Math.floor(ss.x) + ox - 4, Math.floor(ss.y) - 4, ss.width + 8, ss.height + 8);
+    ctx.fillRect(Math.floor(ss.x)+ox-4, Math.floor(ss.y)-4, ss.width+8, ss.height+8);
     ctx.globalAlpha = 1;
-  }
-
-  // Cats - BIG and named
-  for (const cat of game.cats) {
-    if (cat.name === 'Nora') {
-      drawPixelSprite(cat.x, cat.y, noraSprite());
-    } else {
-      drawPixelSprite(cat.x, cat.y, effieSprite());
-    }
-    // Name label above cat
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.max(12, SCALE * 3) + 'px monospace';
+    // Hint label
+    ctx.fillStyle = ss.isHigh ? '#ffaa55' : '#aac';
+    ctx.font = 'bold ' + Math.max(9, SCALE*2) + 'px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(cat.name, Math.floor(cat.x + cat.width / 2), Math.floor(cat.y - 6));
+    ctx.fillText(ss.isHigh ? 'DUCK!' : 'JUMP!', Math.floor(ss.x + ss.width/2), Math.floor(ss.y - 4));
     ctx.textAlign = 'left';
   }
 
-  // Emily - tall with long brown hair
-  for (const em of game.emilys) {
-    drawPixelSprite(em.x, em.y, emilySprite(em.frame));
-    if (!em.fed) {
-      // Speech bubble
-      const bx = em.x - 5;
-      const by = em.y - 28;
-      ctx.fillStyle = '#fff';
-      const bubbleW = Math.max(75, SCALE * 20);
-      ctx.fillRect(Math.floor(bx), Math.floor(by), bubbleW, 22);
-      // Triangle pointer
-      ctx.beginPath();
-      ctx.moveTo(Math.floor(em.x + 15), Math.floor(by + 22));
-      ctx.lineTo(Math.floor(em.x + 25), Math.floor(by + 22));
-      ctx.lineTo(Math.floor(em.x + 18), Math.floor(by + 30));
-      ctx.fill();
-      ctx.fillStyle = '#333';
-      ctx.font = 'bold ' + Math.max(12, SCALE * 3.5) + 'px monospace';
-      ctx.fillText('HUNGRY!', Math.floor(bx + 5), Math.floor(by + 16));
-      // Name
-      ctx.fillStyle = '#ddd';
-      ctx.font = Math.max(10, SCALE * 2.5) + 'px monospace';
-      ctx.fillText('Emily', Math.floor(em.x + em.width / 2 - 12), Math.floor(em.y - 32));
+  // Cats - BIG with names and behaviors
+  for (const cat of game.cats) {
+    if (cat.name === 'Nora') {
+      drawPixelSprite(cat.x, cat.y, noraSprite(cat.frame));
+    } else {
+      drawPixelSprite(cat.x, cat.y, effieSprite(cat.frame));
     }
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.max(12, SCALE*3) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(cat.name, Math.floor(cat.x + cat.width/2), Math.floor(cat.y - 6));
+    ctx.textAlign = 'left';
+  }
+
+  // Emily - persistent on the left
+  {
+    const em = game.emily;
+    const emilyScale = SCALE * em.scale;
+    drawPixelSprite(em.x, em.y, emilySprite(em.frame), emilyScale);
+
+    // Name above
+    ctx.fillStyle = '#ddd';
+    ctx.font = 'bold ' + Math.max(10, SCALE*2.5) + 'px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Emily', Math.floor(em.x + em.width/2), Math.floor(em.y - 8));
+
+    // Times fed counter
+    if (em.timesFed > 0) {
+      ctx.fillStyle = '#fda';
+      ctx.font = Math.max(9, SCALE*2) + 'px monospace';
+      ctx.fillText('Fed: ' + em.timesFed, Math.floor(em.x + em.width/2), Math.floor(em.y - 20));
+    }
+
+    // HUNGRY!! speech bubble (only when hungry)
+    if (em.hungry) {
+      const bx = em.x + em.width + 4;
+      const by = em.y - 10;
+      const bubbleW = Math.max(85, SCALE * 22);
+      // Pulsing bubble
+      const pulse = 1 + Math.sin(game.frameCount * 0.15) * 0.05;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(Math.floor(bx), Math.floor(by), bubbleW * pulse, 24);
+      // Pointer triangle
+      ctx.beginPath();
+      ctx.moveTo(Math.floor(bx), Math.floor(by + 8));
+      ctx.lineTo(Math.floor(bx), Math.floor(by + 16));
+      ctx.lineTo(Math.floor(bx - 8), Math.floor(by + 12));
+      ctx.fill();
+      ctx.fillStyle = '#c00';
+      ctx.font = 'bold ' + Math.max(13, SCALE * 3.5) + 'px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('HUNGRY!!', Math.floor(bx + 5), Math.floor(by + 17));
+    }
+    ctx.textAlign = 'left';
   }
 
   // Thrown burgers
@@ -916,33 +1101,25 @@ function draw() {
   if (sara.facing === -1) {
     ctx.translate(sara.x + sara.width, sara.y);
     ctx.scale(-1, 1);
-    drawPixelSprite(0, 0, saraSprite(sara.frame));
+    drawPixelSprite(0, 0, saraSprite(sara.frame, sara.ducking));
   } else {
-    drawPixelSprite(sara.x, sara.y, saraSprite(sara.frame));
+    drawPixelSprite(sara.x, sara.y, saraSprite(sara.frame, sara.ducking));
   }
   ctx.restore();
 
   // Sara name
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold ' + Math.max(10, SCALE * 2.5) + 'px monospace';
+  ctx.font = 'bold ' + Math.max(10, SCALE*2.5) + 'px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Sara', Math.floor(sara.x + sara.width / 2), Math.floor(sara.y - 6));
+  ctx.fillText('Sara', Math.floor(sara.x + sara.width/2), Math.floor(sara.y - 6));
   ctx.textAlign = 'left';
-
-  // Carrying indicator
-  if (game.firewood > 0) {
-    ctx.fillStyle = '#D2691E';
-    ctx.font = Math.max(10, SCALE * 3) + 'px monospace';
-    ctx.fillText('\uD83E\uDEB5' + game.firewood, Math.floor(sara.x - 5), Math.floor(sara.y - 18));
-  }
 
   // Particles
   for (const pt of game.particles) {
-    const alpha = pt.life / 35;
-    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.globalAlpha = Math.min(1, pt.life / 35);
     if (pt.text) {
       ctx.fillStyle = pt.color;
-      ctx.font = 'bold 16px monospace';
+      ctx.font = 'bold 14px monospace';
       ctx.fillText(pt.text, Math.floor(pt.x), Math.floor(pt.y));
     } else {
       ctx.fillStyle = pt.color;
@@ -952,137 +1129,122 @@ function draw() {
   }
 
   // HUD
-  const hud = document.getElementById('score-display');
-  hud.innerHTML = 'SCORE: ' + game.score + '<br>WOOD: ' + game.firewood + '<br>BURGERS: ' + game.burgers;
+  document.getElementById('score-display').innerHTML =
+    'SCORE: ' + game.score + '<br>WOOD: ' + game.firewood + '<br>BURGERS: ' + game.burgers;
 
-  // Snowflakes in front (fewer, larger)
+  // Snowflakes in front
   ctx.globalAlpha = 0.7;
   for (let i = 0; i < 15; i++) {
     const sf = game.snowflakes[i];
     ctx.fillStyle = '#fff';
-    ctx.fillRect(Math.floor(sf.x), Math.floor(sf.y), sf.size + 1, sf.size + 1);
+    ctx.fillRect(Math.floor(sf.x), Math.floor(sf.y), sf.size+1, sf.size+1);
   }
   ctx.globalAlpha = 1;
 }
 
 function drawMountains() {
-  const offset = (game.scrollX || 0) * 0.1;
+  const o = (game.scrollX || 0) * 0.1;
   ctx.fillStyle = '#2a3050';
-  ctx.beginPath();
-  ctx.moveTo(0, GROUND_Y);
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y);
   for (let x = 0; x <= W; x += 40) {
-    const h = Math.sin((x + offset) * 0.006) * 80 + Math.sin((x + offset) * 0.002) * 50 + 100;
-    ctx.lineTo(x, GROUND_Y - h);
+    ctx.lineTo(x, GROUND_Y - (Math.sin((x+o)*0.006)*80 + Math.sin((x+o)*0.002)*50 + 100));
   }
-  ctx.lineTo(W, GROUND_Y);
-  ctx.fill();
+  ctx.lineTo(W, GROUND_Y); ctx.fill();
 
   ctx.fillStyle = '#3a4060';
-  ctx.beginPath();
-  ctx.moveTo(0, GROUND_Y);
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y);
   for (let x = 0; x <= W; x += 30) {
-    const h = Math.sin((x + offset * 1.5) * 0.01) * 50 + Math.sin((x + offset * 1.5) * 0.004) * 30 + 70;
-    ctx.lineTo(x, GROUND_Y - h);
+    ctx.lineTo(x, GROUND_Y - (Math.sin((x+o*1.5)*0.01)*50 + Math.sin((x+o*1.5)*0.004)*30 + 70));
   }
-  ctx.lineTo(W, GROUND_Y);
-  ctx.fill();
-
-  // Snow caps
-  ctx.fillStyle = '#e8eaf6';
-  ctx.globalAlpha = 0.3;
-  ctx.beginPath();
-  ctx.moveTo(0, GROUND_Y - 130);
-  for (let x = 0; x <= W; x += 40) {
-    const h = Math.sin((x + offset) * 0.006) * 80 + Math.sin((x + offset) * 0.002) * 50 + 100;
-    if (h > 120) {
-      ctx.lineTo(x, GROUND_Y - h);
-      ctx.lineTo(x + 20, GROUND_Y - h + 15);
-    }
-  }
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.lineTo(W, GROUND_Y); ctx.fill();
 }
 
-// --- GAME LOOP ---
+// ---- GAME LOOP ----
 let loopStarted = false;
 function gameLoop() {
-  if (game.running) {
-    game.scrollX += game.scrollSpeed;
-    update();
-  }
+  if (game.running) { game.scrollX += game.scrollSpeed; update(); }
   draw();
   requestAnimationFrame(gameLoop);
 }
 
-// --- INPUT HANDLING ---
+// ---- INPUT ----
 const btnLeft = document.getElementById('btn-left');
+const btnDuck = document.getElementById('btn-duck');
 const btnJump = document.getElementById('btn-jump');
 const btnRight = document.getElementById('btn-right');
 const throwBtn = document.getElementById('throw-btn');
+const fireBtn = document.getElementById('fire-btn');
 
-function handleTouchStart(zone) {
+function ts(zone) {
   return function(e) {
     e.preventDefault();
     if (zone === 'left') game.input.left = true;
     if (zone === 'right') game.input.right = true;
     if (zone === 'jump') game.input.jump = true;
+    if (zone === 'duck') game.input.duck = true;
   };
 }
-
-function handleTouchEnd(zone) {
+function te(zone) {
   return function(e) {
     e.preventDefault();
     if (zone === 'left') game.input.left = false;
     if (zone === 'right') game.input.right = false;
+    if (zone === 'duck') game.input.duck = false;
   };
 }
 
-btnLeft.addEventListener('touchstart', handleTouchStart('left'), { passive: false });
-btnLeft.addEventListener('touchend', handleTouchEnd('left'), { passive: false });
-btnRight.addEventListener('touchstart', handleTouchStart('right'), { passive: false });
-btnRight.addEventListener('touchend', handleTouchEnd('right'), { passive: false });
-btnJump.addEventListener('touchstart', handleTouchStart('jump'), { passive: false });
-btnJump.addEventListener('touchend', handleTouchEnd('jump'), { passive: false });
+btnLeft.addEventListener('touchstart', ts('left'), {passive:false});
+btnLeft.addEventListener('touchend', te('left'), {passive:false});
+btnDuck.addEventListener('touchstart', ts('duck'), {passive:false});
+btnDuck.addEventListener('touchend', te('duck'), {passive:false});
+btnJump.addEventListener('touchstart', ts('jump'), {passive:false});
+btnJump.addEventListener('touchend', te('jump'), {passive:false});
+btnRight.addEventListener('touchstart', ts('right'), {passive:false});
+btnRight.addEventListener('touchend', te('right'), {passive:false});
 
+// Mouse fallback
 btnLeft.addEventListener('mousedown', () => game.input.left = true);
 btnLeft.addEventListener('mouseup', () => game.input.left = false);
 btnLeft.addEventListener('mouseleave', () => game.input.left = false);
+btnDuck.addEventListener('mousedown', () => game.input.duck = true);
+btnDuck.addEventListener('mouseup', () => game.input.duck = false);
+btnDuck.addEventListener('mouseleave', () => game.input.duck = false);
 btnRight.addEventListener('mousedown', () => game.input.right = true);
 btnRight.addEventListener('mouseup', () => game.input.right = false);
 btnRight.addEventListener('mouseleave', () => game.input.right = false);
 btnJump.addEventListener('mousedown', () => game.input.jump = true);
 
-throwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwBurger(); }, { passive: false });
+throwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwBurger(); }, {passive:false});
 throwBtn.addEventListener('click', () => throwBurger());
+fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); lightFire(); }, {passive:false});
+fireBtn.addEventListener('click', () => lightFire());
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft') game.input.left = true;
   if (e.code === 'ArrowRight') game.input.right = true;
+  if (e.code === 'ArrowDown') game.input.duck = true;
   if (e.code === 'Space') { e.preventDefault(); game.input.jump = true; }
-  if (e.code === 'KeyF' || e.code === 'KeyX') throwBurger();
+  if (e.code === 'KeyF') throwBurger();
+  if (e.code === 'KeyX' || e.code === 'KeyC') lightFire();
 });
-
 document.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft') game.input.left = false;
   if (e.code === 'ArrowRight') game.input.right = false;
+  if (e.code === 'ArrowDown') game.input.duck = false;
 });
 
-// --- START / RESTART ---
 document.getElementById('start-btn').addEventListener('click', () => {
   document.getElementById('start-screen').style.display = 'none';
-  initGame();
-  updateThrowBtn();
+  initGame(); updateActionBtns();
   if (!loopStarted) { loopStarted = true; gameLoop(); }
 });
-
 document.getElementById('restart-btn').addEventListener('click', () => {
   document.getElementById('gameover-screen').style.display = 'none';
-  initGame();
-  updateThrowBtn();
+  initGame(); updateActionBtns();
   if (!loopStarted) { loopStarted = true; gameLoop(); }
 });
 
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => e.preventDefault(), {passive:false});
 </script>
 </body>
 </html>
