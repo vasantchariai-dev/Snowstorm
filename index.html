@@ -394,7 +394,7 @@ function initGame() {
     deathReason: '',
 
     sara: {
-      x: W * 0.35,
+      x: W * 0.25,
       y: GROUND_Y - saraH,
       vy: 0, vx: 0,
       onGround: true,
@@ -418,9 +418,9 @@ function initGame() {
     particles: [],
     snowflakes: [],
 
-    // Emily: persistent character on the left side
+    // Emily: persistent character on the right side
     emily: {
-      x: 10,
+      x: W - 14 * SCALE - 15,
       y: GROUND_Y - 20 * SCALE,
       baseWidth: 14 * SCALE,
       baseHeight: 20 * SCALE,
@@ -802,9 +802,10 @@ function update() {
     }
   }
 
-  // Emily stays on left - update her position
+  // Emily stays on right - update her position
   {
     const em = game.emily;
+    em.x = W - em.width - 15;
     em.y = GROUND_Y - em.height;
   }
 
@@ -893,10 +894,10 @@ function throwBurger() {
   game.burgers--;
   updateActionBtns();
   const s = game.sara;
-  // Throw toward Emily (left side) - arc it over
+  // Throw toward Emily (right side) - arc it over
   game.thrownBurgers.push({
-    x: s.x, y: s.y + s.height * 0.3,
-    vx: -5, vy: -3, width: 8*SCALE, height: 7*SCALE,
+    x: s.x + s.width, y: s.y + s.height * 0.3,
+    vx: 6, vy: -2.5, width: 8*SCALE, height: 7*SCALE,
   });
 }
 
@@ -1048,7 +1049,7 @@ function draw() {
     ctx.textAlign = 'left';
   }
 
-  // Emily - persistent on the left
+  // Emily - persistent on the right
   {
     const em = game.emily;
     const emilyScale = SCALE * em.scale;
@@ -1067,20 +1068,20 @@ function draw() {
       ctx.fillText('Fed: ' + em.timesFed, Math.floor(em.x + em.width/2), Math.floor(em.y - 20));
     }
 
-    // HUNGRY!! speech bubble (only when hungry)
+    // HUNGRY!! speech bubble (only when hungry) - points left from Emily
     if (em.hungry) {
-      const bx = em.x + em.width + 4;
-      const by = em.y - 10;
       const bubbleW = Math.max(85, SCALE * 22);
+      const bx = em.x - bubbleW - 8;
+      const by = em.y - 10;
       // Pulsing bubble
       const pulse = 1 + Math.sin(game.frameCount * 0.15) * 0.05;
       ctx.fillStyle = '#fff';
       ctx.fillRect(Math.floor(bx), Math.floor(by), bubbleW * pulse, 24);
-      // Pointer triangle
+      // Pointer triangle pointing right toward Emily
       ctx.beginPath();
-      ctx.moveTo(Math.floor(bx), Math.floor(by + 8));
-      ctx.lineTo(Math.floor(bx), Math.floor(by + 16));
-      ctx.lineTo(Math.floor(bx - 8), Math.floor(by + 12));
+      ctx.moveTo(Math.floor(bx + bubbleW), Math.floor(by + 8));
+      ctx.lineTo(Math.floor(bx + bubbleW), Math.floor(by + 16));
+      ctx.lineTo(Math.floor(bx + bubbleW + 8), Math.floor(by + 12));
       ctx.fill();
       ctx.fillStyle = '#c00';
       ctx.font = 'bold ' + Math.max(13, SCALE * 3.5) + 'px monospace';
