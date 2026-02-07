@@ -94,7 +94,7 @@ canvas {
     Tap on cats to stroke them away!<br><br>
     <b>JUMP</b> over snowdrifts &amp; cats<br>
     <b>DUCK</b> under high snowstorms<br>
-    <b>FIREWOOD</b> - light fires to melt snow!<br>
+    <b>FIREWOOD</b> - throw at snow to melt it!<br>
     <b>BURGERS</b> - throw to feed Emily<br><br>
     You have 3 lives! Watch out for Effie &amp; Nora!
   </div>
@@ -411,8 +411,10 @@ function initGame() {
     snowflakes: [],
 
     // Emily: persistent character on the right side
+    thrownFirewood: [],
+
     emily: {
-      x: W - 14 * SCALE - 15,
+      x: W - 14 * SCALE - 170,
       y: GROUND_Y - 20 * SCALE,
       baseWidth: 14 * SCALE,
       baseHeight: 20 * SCALE,
@@ -666,44 +668,64 @@ function update() {
     if (game.platforms[i].x + game.platforms[i].w < -60) game.platforms.splice(i, 1);
   }
 
-  // Campfires - they burn and melt snow!
+  // Thrown firewood - flies forward, melts snow on contact, lights a brief campfire
+  for (let i = game.thrownFirewood.length - 1; i >= 0; i--) {
+    const fw = game.thrownFirewood[i];
+    fw.x += fw.vx; fw.y += fw.vy; fw.vy += 0.15;
+    if (fw.x > W + 60 || fw.y > H + 60 || fw.x < -60) {
+      game.thrownFirewood.splice(i, 1); continue;
+    }
+    // Check collision with snowstorms
+    let melted = false;
+    for (let j = game.snowstorms.length - 1; j >= 0; j--) {
+      const ss = game.snowstorms[j];
+      if (rectsOverlap(fw, ss)) {
+        game.score += 25;
+        spawnParticles(ss.x + ss.width/2, ss.y + ss.height/2, 12, '#ff8800');
+        spawnParticles(ss.x + ss.width/2, ss.y + ss.height/2, 8, '#87CEEB');
+        game.particles.push({
+          x: ss.x, y: ss.y - 15, vx: 0, vy: -1.2,
+          life: 40, color: '#ff8800', text: 'MELTED!', size: 3,
+        });
+        // Brief campfire where it hit
+        game.campfires.push({
+          x: ss.x + ss.width/2 - 4*SCALE, y: GROUND_Y - 8*SCALE,
+          width: 8*SCALE, height: 8*SCALE, life: 90, frame: 0,
+        });
+        game.snowstorms.splice(j, 1);
+        melted = true; break;
+      }
+    }
+    if (melted) { game.thrownFirewood.splice(i, 1); continue; }
+    // Check collision with snowdrifts
+    for (let j = game.snowdrifts.length - 1; j >= 0; j--) {
+      const sd = game.snowdrifts[j];
+      if (rectsOverlap(fw, sd)) {
+        game.score += 20;
+        spawnParticles(sd.x + sd.width/2, sd.y + sd.height/2, 10, '#ff8800');
+        spawnParticles(sd.x + sd.width/2, sd.y + sd.height/2, 6, '#87CEEB');
+        game.particles.push({
+          x: sd.x, y: sd.y - 15, vx: 0, vy: -1.2,
+          life: 40, color: '#ff8800', text: 'MELTED!', size: 3,
+        });
+        game.campfires.push({
+          x: sd.x + sd.width/2 - 4*SCALE, y: GROUND_Y - 8*SCALE,
+          width: 8*SCALE, height: 8*SCALE, life: 90, frame: 0,
+        });
+        game.snowdrifts.splice(j, 1);
+        melted = true; break;
+      }
+    }
+    if (melted) { game.thrownFirewood.splice(i, 1); continue; }
+  }
+
+  // Campfires - decorative burn after melting
   for (let i = game.campfires.length - 1; i >= 0; i--) {
     const cf = game.campfires[i];
     cf.x -= sx;
     cf.life--;
     cf.frame++;
-    if (cf.life <= 0) { game.campfires.splice(i, 1); continue; }
-
-    // Melt nearby snowstorms
-    const meltRange = 10 * SCALE;
-    for (let j = game.snowstorms.length - 1; j >= 0; j--) {
-      const ss = game.snowstorms[j];
-      const dx = (cf.x + cf.width/2) - (ss.x + ss.width/2);
-      const dy = (cf.y + cf.height/2) - (ss.y + ss.height/2);
-      if (Math.abs(dx) < meltRange && Math.abs(dy) < meltRange) {
-        game.score += 15;
-        spawnParticles(ss.x + ss.width/2, ss.y, 8, '#87CEEB');
-        game.particles.push({
-          x: ss.x, y: ss.y - 15, vx: 0, vy: -1.2,
-          life: 35, color: '#87CEEB', text: 'MELTED!', size: 3,
-        });
-        game.snowstorms.splice(j, 1);
-      }
-    }
-    // Melt snowdrifts too
-    for (let j = game.snowdrifts.length - 1; j >= 0; j--) {
-      const sd = game.snowdrifts[j];
-      const dx = (cf.x + cf.width/2) - (sd.x + sd.width/2);
-      if (Math.abs(dx) < meltRange) {
-        game.score += 10;
-        spawnParticles(sd.x + sd.width/2, sd.y, 6, '#87CEEB');
-        game.particles.push({
-          x: sd.x, y: sd.y - 15, vx: 0, vy: -1.2,
-          life: 35, color: '#87CEEB', text: 'MELTED!', size: 3,
-        });
-        game.snowdrifts.splice(j, 1);
-      }
-    }
+    if (cf.life <= 0) { game.campfires.splice(i, 1); }
   }
 
   // Snowdrifts
@@ -801,10 +823,10 @@ function update() {
     }
   }
 
-  // Emily stays on right - update her position
+  // Emily stays on right - update her position (left of action buttons)
   {
     const em = game.emily;
-    em.x = W - em.width - 15;
+    em.x = W - em.width - 170;
     em.y = GROUND_Y - em.height;
   }
 
@@ -937,20 +959,17 @@ function throwBurger() {
   });
 }
 
-function lightFire() {
+function throwFirewood() {
   if (!game.running || game.firewood <= 0) return;
   game.firewood--;
-  game.score += 10;
   updateActionBtns();
   const s = game.sara;
-  game.campfires.push({
-    x: s.x + s.width/2 - 4*SCALE,
-    y: GROUND_Y - 8*SCALE,
-    width: 8*SCALE, height: 8*SCALE,
-    life: 180, // Burns for 3 seconds
-    frame: 0,
+  // Throw firewood forward (right) toward oncoming snow
+  game.thrownFirewood.push({
+    x: s.x + s.width, y: s.y + s.height * 0.3,
+    vx: 7, vy: -2, width: 8*SCALE, height: 6*SCALE,
   });
-  spawnParticles(s.x + s.width/2, GROUND_Y - 8*SCALE, 5, '#ff8800');
+  spawnParticles(s.x + s.width, s.y + s.height * 0.3, 4, '#D2691E');
 }
 
 function updateActionBtns() {
@@ -1130,6 +1149,16 @@ function draw() {
   // Thrown burgers
   for (const tb of game.thrownBurgers) {
     drawPixelSprite(tb.x, tb.y, burgerSprite());
+  }
+
+  // Thrown firewood
+  for (const fw of game.thrownFirewood) {
+    drawPixelSprite(fw.x, fw.y, firewoodSprite());
+    // Fiery trail
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = '#ff6600';
+    ctx.fillRect(Math.floor(fw.x - 4), Math.floor(fw.y + fw.height/3), 6, 4);
+    ctx.globalAlpha = 1;
   }
 
   // Sara (flash when invincible)
@@ -1327,8 +1356,8 @@ touchLayer.addEventListener('mouseup', function() {
 
 throwBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwBurger(); }, {passive:false});
 throwBtn.addEventListener('click', () => throwBurger());
-fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); lightFire(); }, {passive:false});
-fireBtn.addEventListener('click', () => lightFire());
+fireBtn.addEventListener('touchstart', (e) => { e.preventDefault(); throwFirewood(); }, {passive:false});
+fireBtn.addEventListener('click', () => throwFirewood());
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft') game.input.left = true;
@@ -1336,7 +1365,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowDown') game.input.duck = true;
   if (e.code === 'Space') { e.preventDefault(); game.input.jump = true; }
   if (e.code === 'KeyF') throwBurger();
-  if (e.code === 'KeyX' || e.code === 'KeyC') lightFire();
+  if (e.code === 'KeyX' || e.code === 'KeyC') throwFirewood();
 });
 document.addEventListener('keyup', (e) => {
   if (e.code === 'ArrowLeft') game.input.left = false;
